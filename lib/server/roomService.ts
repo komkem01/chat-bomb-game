@@ -1,9 +1,10 @@
 import { query } from './db';
 import { HttpError, badRequest, forbidden, notFound } from './errors';
-import { DbMessage, DbPlayer, DbRoom, RoomData } from '@/types/game';
+import { DbMessage, DbPlayer, DbRoom, RoomData, PodiumEntry } from '@/types/game';
 
 const MAX_ROOM_CODE_ATTEMPTS = 7;
 const MAX_MESSAGE_HISTORY = 200;
+const PODIUM_POINTS = [5, 3, 1];
 
 const normalize = (text: string) => text.trim().toLowerCase();
 
@@ -63,11 +64,21 @@ export const joinRoomService = async (roomId: string, playerId: string, playerNa
     throw forbidden('ห้องนี้ถูกปิดแล้ว');
   }
 
+  const existingPlayer = await query<DbPlayer>(
+    `SELECT * FROM room_players WHERE room_id = $1 AND player_id = $2`,
+    [roomId, playerId]
+  );
+
+  const playerRow = existingPlayer.rows[0];
+  if (playerRow?.is_eliminated) {
+    throw forbidden('คุณถูกคัดออกแล้ว กรุณารอรอบถัดไป');
+  }
+
   await query(
     `INSERT INTO room_players (room_id, player_id, player_name, is_eliminated)
      VALUES ($1, $2, $3, FALSE)
      ON CONFLICT (room_id, player_id)
-     DO UPDATE SET player_name = EXCLUDED.player_name, is_eliminated = FALSE`,
+     DO UPDATE SET player_name = EXCLUDED.player_name`,
     [roomId, playerId, playerName]
   );
 
@@ -99,10 +110,13 @@ export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
       ),
     ]);
 
+    const podium = room.status === 'CLOSED' ? await getPodiumForRoom(roomId, playersResult.rows) : undefined;
+
     return {
       room,
       players: playersResult.rows,
       messages: messagesResult.rows,
+      podium,
     };
   } catch (error) {
     console.error(`Error getting room data for ${roomId}:`, error);
@@ -137,9 +151,6 @@ export const updateRoomSettingsService = async (
      WHERE room_id = $1`,
     [roomId, normalize(bombWord), hint || null, setterId, setterName]
   );
-
-  await query(`DELETE FROM messages WHERE room_id = $1`, [roomId]);
-  await query(`UPDATE room_players SET is_eliminated = FALSE WHERE room_id = $1`, [roomId]);
 
   return getRoomDataService(roomId);
 };
@@ -242,4 +253,53 @@ const getRoomByCode = async (roomId: string): Promise<DbRoom> => {
     throw notFound('ไม่พบห้องที่ระบุ');
   }
   return room;
+};
+
+const getPodiumForRoom = async (roomId: string, players: DbPlayer[]): Promise<PodiumEntry[]> => {
+  if (!players.length) {
+    return [];
+  }
+
+  const eliminationsResult = await query<{ sender_id: string; eliminated_at: Date }>(
+    `SELECT sender_id, MAX(created_at) AS eliminated_at
+       FROM messages
+      WHERE room_id = $1
+        AND is_boom = TRUE
+      GROUP BY sender_id`,
+    [roomId]
+  );
+
+  const eliminationMap = new Map<string, Date>();
+  eliminationsResult.rows.forEach((row) => {
+    eliminationMap.set(row.sender_id, new Date(row.eliminated_at));
+  });
+
+  const ranking = players
+    .map((player) => {
+      const eliminationDate = eliminationMap.get(player.player_id);
+      const survivalValue = eliminationDate ? eliminationDate.getTime() : Number.MAX_SAFE_INTEGER;
+      return {
+        playerId: player.player_id,
+        playerName: player.player_name,
+        isEliminated: player.is_eliminated,
+        eliminationDate,
+        joinTime: new Date(player.joined_at).getTime(),
+        survivalValue,
+      };
+    })
+    .sort((a, b) => {
+      if (a.survivalValue === b.survivalValue) {
+        return a.joinTime - b.joinTime;
+      }
+      return b.survivalValue - a.survivalValue;
+    });
+
+  return ranking.slice(0, 3).map((entry, index) => ({
+    position: index + 1,
+    playerId: entry.playerId,
+    playerName: entry.playerName,
+    points: PODIUM_POINTS[index] ?? 0,
+    status: entry.isEliminated ? 'eliminated' : 'survivor',
+    eliminatedAt: entry.eliminationDate ? entry.eliminationDate.toISOString() : null,
+  }));
 };

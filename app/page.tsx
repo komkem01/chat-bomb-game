@@ -35,9 +35,10 @@ export default function ChatBombGame() {
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-    const unsubscribeRoomListener = useRef<{ unsubscribe: () => void } | null>(null);
-    const chatBoxRef = useRef<HTMLDivElement>(null);
-    const roomFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const unsubscribeRoomListener = useRef<{ unsubscribe: () => void } | null>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
+  const roomFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasShownCloseToastRef = useRef(false);
 
     const showToast = (message: string, type: ToastType = 'info') => {
       const toastContainer = document.getElementById('toast-container');
@@ -152,6 +153,7 @@ export default function ChatBombGame() {
         clearTimeout(roomFetchTimeoutRef.current);
         roomFetchTimeoutRef.current = null;
       }
+      hasShownCloseToastRef.current = false;
       setGameState((prev) => ({
         ...prev,
         currentRoomId: null,
@@ -179,12 +181,16 @@ export default function ChatBombGame() {
         try {
           const data = await getRoomData(roomId);
           retryCount = 0; // Reset on success
-          
+
           if (data.room.status === 'CLOSED') {
-            showToast('ห้องถูกปิดโดยผู้ดูแล', 'info');
-            leaveRoom();
-            return;
+            if (!hasShownCloseToastRef.current) {
+              showToast('ห้องถูกปิดแล้ว! ดูโพเดียมได้เลย', 'info');
+              hasShownCloseToastRef.current = true;
+            }
+          } else if (hasShownCloseToastRef.current) {
+            hasShownCloseToastRef.current = false;
           }
+
           setGameState((prev) => ({ ...prev, currentRoomData: data }));
         } catch (error) {
           console.error('Error fetching room data:', error);
@@ -299,8 +305,9 @@ export default function ChatBombGame() {
       setShowConfirmModal(false);
 
       try {
-        await closeRoom(gameState.currentRoomId, gameState.userId);
-        leaveRoom();
+        const closedRoom = await closeRoom(gameState.currentRoomId, gameState.userId);
+        hasShownCloseToastRef.current = true;
+        setGameState((prev) => ({ ...prev, currentRoomData: closedRoom }));
         showToast('ปิดห้องเรียบร้อยแล้ว', 'success');
       } catch (e) {
         console.error('Error closing room:', e);

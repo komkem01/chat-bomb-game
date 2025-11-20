@@ -54,42 +54,51 @@ const GameScreen: React.FC<GameScreenProps> = ({
 }) => {
   const isOwner = roomData.room.owner_id === userId;
   const isSetter = roomData.room.setter_id === userId;
-  const aliveCount = roomData.players?.filter((p) => !p.is_eliminated).length || 0;
-  const deadCount = roomData.players?.filter((p) => p.is_eliminated).length || 0;
-  const isEliminated = roomData.players?.some((p) => p.player_id === userId && p.is_eliminated);
+  const aliveCount =
+    roomData.players?.filter((p) => !p.is_eliminated).length || 0;
+  const deadCount =
+    roomData.players?.filter((p) => p.is_eliminated).length || 0;
+  const isEliminated = roomData.players?.some(
+    (p) => p.player_id === userId && p.is_eliminated
+  );
+  const podiumEntries = roomData.podium || [];
+  const showPodium =
+    roomData.room.status === "CLOSED" && podiumEntries.length > 0;
 
   const renderMessages = () => {
     if (!roomData.messages) return null;
-    
+
     return roomData.messages.map((msg: DbMessage, index: number) => {
       const isMe = msg.sender_id === userId;
       const isEliminated = msg.is_boom;
-      
+
       // Modern gradient styles with glassmorphism
       const bubbleClass = isEliminated
-        ? 'bg-gradient-to-br from-red-600/90 via-red-500/90 to-orange-600/90 text-white border-2 border-red-300/50 shadow-2xl shadow-red-500/30 backdrop-blur-xl'
+        ? "bg-gradient-to-br from-red-600/90 via-red-500/90 to-orange-600/90 text-white border-2 border-red-300/50 shadow-2xl shadow-red-500/30 backdrop-blur-xl"
         : isMe
-        ? 'bg-gradient-to-br from-blue-600/90 via-blue-500/90 to-cyan-500/90 text-white shadow-xl shadow-blue-500/20 backdrop-blur-xl border border-blue-300/20'
-        : 'bg-gradient-to-br from-slate-700/90 via-slate-600/90 to-slate-700/90 text-slate-50 border border-slate-500/30 shadow-lg shadow-slate-900/40 backdrop-blur-xl';
-      
-      const alignClass = isMe ? 'items-end' : 'items-start';
+        ? "bg-gradient-to-br from-blue-600/90 via-blue-500/90 to-cyan-500/90 text-white shadow-xl shadow-blue-500/20 backdrop-blur-xl border border-blue-300/20"
+        : "bg-gradient-to-br from-slate-700/90 via-slate-600/90 to-slate-700/90 text-slate-50 border border-slate-500/30 shadow-lg shadow-slate-900/40 backdrop-blur-xl";
+
+      const alignClass = isMe ? "items-end" : "items-start";
       const animationDelay = `${(index % 5) * 50}ms`;
 
       return (
-        <div 
-          key={msg.id} 
+        <div
+          key={msg.id}
           className={`flex flex-col w-full ${alignClass} mb-3 sm:mb-4 animate-slide-up`}
           style={{ animationDelay }}
         >
           {/* Sender info with modern badge */}
           <div className="flex items-center gap-2 mb-2 px-1">
-            <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-lg ${
-              isEliminated 
-                ? 'bg-gradient-to-br from-red-500 to-red-700 text-white ring-2 ring-red-300/50' 
-                : isMe 
-                ? 'bg-gradient-to-br from-blue-500 to-cyan-500 text-white ring-2 ring-blue-300/50' 
-                : 'bg-gradient-to-br from-slate-600 to-slate-700 text-slate-200 ring-2 ring-slate-400/30'
-            }`}>
+            <div
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-lg ${
+                isEliminated
+                  ? "bg-gradient-to-br from-red-500 to-red-700 text-white ring-2 ring-red-300/50"
+                  : isMe
+                  ? "bg-gradient-to-br from-blue-500 to-cyan-500 text-white ring-2 ring-blue-300/50"
+                  : "bg-gradient-to-br from-slate-600 to-slate-700 text-slate-200 ring-2 ring-slate-400/30"
+              }`}
+            >
               {msg.sender_name.charAt(0).toUpperCase()}
             </div>
             <span className="text-xs sm:text-sm font-semibold text-slate-300">
@@ -103,18 +112,20 @@ const GameScreen: React.FC<GameScreenProps> = ({
           </div>
 
           {/* Message bubble with modern design */}
-          <div className={`
+          <div
+            className={`
             group relative px-4 sm:px-5 py-3 sm:py-3.5 rounded-2xl sm:rounded-3xl 
             max-w-[85%] sm:max-w-[75%] ${bubbleClass} 
             text-sm sm:text-base leading-relaxed
             transform transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl
-            ${isEliminated ? 'ring-2 ring-red-400/30 animate-pulse-slow' : ''}
-          `}>
+            ${isEliminated ? "ring-2 ring-red-400/30 animate-pulse-slow" : ""}
+          `}
+          >
             {/* Glow effect for eliminated messages */}
             {isEliminated && (
               <div className="absolute inset-0 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-red-500/20 to-orange-500/20 blur-xl -z-10 animate-pulse"></div>
             )}
-            
+
             {/* Message text with better typography */}
             <p className="relative z-10 font-medium tracking-wide">
               {msg.message_text}
@@ -134,7 +145,10 @@ const GameScreen: React.FC<GameScreenProps> = ({
 
             {/* Timestamp on hover */}
             <div className="absolute -bottom-5 right-0 text-[10px] text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              {new Date(msg.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+              {new Date(msg.created_at).toLocaleTimeString("th-TH", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </div>
           </div>
 
@@ -162,7 +176,10 @@ const GameScreen: React.FC<GameScreenProps> = ({
               <i className="fas fa-key text-[8px]"></i>
               Room ID
             </span>
-            <div className="flex items-center gap-2 cursor-pointer group" onClick={onCopyRoomCode}>
+            <div
+              className="flex items-center gap-2 cursor-pointer group"
+              onClick={onCopyRoomCode}
+            >
               <span className="font-mono text-base sm:text-lg text-blue-400 font-bold group-hover:text-blue-300 transition-colors">
                 {roomId}
               </span>
@@ -173,12 +190,12 @@ const GameScreen: React.FC<GameScreenProps> = ({
 
         <div className="flex items-center gap-2 sm:gap-4">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
-            {roomData.room.status === 'IDLE' ? (
+            {roomData.room.status === "IDLE" ? (
               <span className="flex items-center gap-2 text-slate-400 text-xs sm:text-sm">
                 <i className="far fa-clock animate-pulse"></i>
                 <span className="hidden sm:inline">รอตั้งค่าเกม</span>
               </span>
-            ) : roomData.room.status === 'PLAYING' ? (
+            ) : roomData.room.status === "PLAYING" ? (
               isEliminated ? (
                 <span className="text-red-400 font-semibold flex items-center gap-2 text-xs sm:text-sm">
                   <i className="fas fa-skull"></i>
@@ -190,6 +207,11 @@ const GameScreen: React.FC<GameScreenProps> = ({
                   <span className="hidden sm:inline">กำลังเล่น</span>
                 </span>
               )
+            ) : roomData.room.status === "CLOSED" ? (
+              <span className="flex items-center gap-2 text-yellow-300 text-xs sm:text-sm font-semibold">
+                <i className="fas fa-flag-checkered"></i>
+                <span className="hidden sm:inline">เกมจบแล้ว</span>
+              </span>
             ) : null}
           </div>
           {isOwner && (
@@ -208,52 +230,77 @@ const GameScreen: React.FC<GameScreenProps> = ({
       <div className="bg-gradient-to-r from-slate-900/95 via-slate-800/95 to-slate-900/95 border-b border-blue-500/20 px-4 sm:px-6 py-3.5 flex justify-between items-center backdrop-blur-xl z-10 shadow-xl">
         <div className="flex gap-3 sm:gap-6 text-xs sm:text-sm font-bold">
           {/* Survivors badge */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/40 shadow-lg shadow-emerald-500/10 transition-all hover:scale-105" title="ผู้รอดชีวิต">
+          <div
+            className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/40 shadow-lg shadow-emerald-500/10 transition-all hover:scale-105"
+            title="ผู้รอดชีวิต"
+          >
             <div className="relative">
               <i className="fas fa-user-shield text-emerald-400"></i>
               {aliveCount > 0 && (
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
               )}
             </div>
-            <span className="text-emerald-300 font-black tabular-nums">{aliveCount}</span>
-            <span className="hidden sm:inline text-emerald-400/70 text-[10px] uppercase tracking-wider">Alive</span>
+            <span className="text-emerald-300 font-black tabular-nums">
+              {aliveCount}
+            </span>
+            <span className="hidden sm:inline text-emerald-400/70 text-[10px] uppercase tracking-wider">
+              Alive
+            </span>
           </div>
 
           {/* Eliminated badge */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-400/40 shadow-lg shadow-red-500/10 transition-all hover:scale-105" title="ถูกคัดออก">
+          <div
+            className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-400/40 shadow-lg shadow-red-500/10 transition-all hover:scale-105"
+            title="ถูกคัดออก"
+          >
             <i className="fas fa-user-slash text-red-400"></i>
-            <span className="text-red-300 font-black tabular-nums">{deadCount}</span>
-            <span className="hidden sm:inline text-red-400/70 text-[10px] uppercase tracking-wider">Out</span>
+            <span className="text-red-300 font-black tabular-nums">
+              {deadCount}
+            </span>
+            <span className="hidden sm:inline text-red-400/70 text-[10px] uppercase tracking-wider">
+              Out
+            </span>
           </div>
 
           {/* Total players */}
           <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700/30 border border-slate-600/30">
             <i className="fas fa-users text-slate-400 text-xs"></i>
-            <span className="text-slate-400 text-xs font-semibold">{roomData.players?.length || 0}/30</span>
+            <span className="text-slate-400 text-xs font-semibold">
+              {roomData.players?.length || 0}/30
+            </span>
           </div>
         </div>
 
         {/* Game status and hint */}
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="text-xs sm:text-sm text-blue-300 font-medium flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50 backdrop-blur-sm">
-            {roomData.room.status === 'IDLE' ? (
+            {roomData.room.status === "IDLE" ? (
               <>
                 <i className="fas fa-hourglass-half text-yellow-400 animate-pulse"></i>
                 <span className="hidden sm:inline">รอเริ่มเกม...</span>
               </>
+            ) : roomData.room.status === "CLOSED" ? (
+              <>
+                <i className="fas fa-flag-checkered text-yellow-300"></i>
+                <span className="hidden sm:inline">เกมจบแล้ว</span>
+              </>
             ) : roomData.room.hint ? (
               <>
                 <i className="fas fa-lightbulb text-yellow-400 animate-pulse-soft"></i>
-                <span className="hidden sm:inline font-semibold">คำใบ้:</span> 
-                <span className="max-w-[120px] sm:max-w-none truncate">{roomData.room.hint}</span>
+                <span className="hidden sm:inline font-semibold">คำใบ้:</span>
+                <span className="max-w-[120px] sm:max-w-none truncate">
+                  {roomData.room.hint}
+                </span>
               </>
             ) : (
-              <span className="hidden sm:inline text-slate-400">เกมกำลังดำเนินการ...</span>
+              <span className="hidden sm:inline text-slate-400">
+                เกมกำลังดำเนินการ...
+              </span>
             )}
           </div>
 
           {/* Edit button for setter */}
-          {isSetter && roomData.room.status === 'PLAYING' && (
+          {isSetter && roomData.room.status === "PLAYING" && (
             <button
               onClick={onOpenSetupModal}
               className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 text-blue-400 border border-blue-400/40 hover:border-blue-400/60 transition-all duration-300 text-xs group shadow-lg hover:shadow-xl"
@@ -266,21 +313,22 @@ const GameScreen: React.FC<GameScreenProps> = ({
       </div>
 
       {/* Chat Area with modern scrollbar */}
-      <div 
-        ref={chatBoxRef} 
+      <div
+        ref={chatBoxRef}
         className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-1 scroll-smooth bg-gradient-to-b from-slate-900/30 via-slate-900/10 to-transparent
           scrollbar-thin scrollbar-track-slate-800/30 scrollbar-thumb-blue-500/30 hover:scrollbar-thumb-blue-500/50"
       >
         {/* Ambient background effects */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-1/4 -left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse-slow"></div>
-          <div className="absolute bottom-1/4 -right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse-slow" style={{ animationDelay: '1s' }}></div>
+          <div
+            className="absolute bottom-1/4 -right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse-slow"
+            style={{ animationDelay: "1s" }}
+          ></div>
         </div>
-        
+
         {/* Messages */}
-        <div className="relative z-10">
-          {renderMessages()}
-        </div>
+        <div className="relative z-10">{renderMessages()}</div>
 
         {/* Empty state */}
         {(!roomData.messages || roomData.messages.length === 0) && (
@@ -288,15 +336,19 @@ const GameScreen: React.FC<GameScreenProps> = ({
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center mb-4 backdrop-blur-xl border border-blue-400/20 shadow-xl">
               <i className="fas fa-comments text-3xl text-blue-400/60"></i>
             </div>
-            <p className="text-slate-400 text-sm sm:text-base font-medium">ไม่มีข้อความในห้อง</p>
-            <p className="text-slate-500 text-xs sm:text-sm mt-1">เริ่มแชทเพื่อเล่นเกม!</p>
+            <p className="text-slate-400 text-sm sm:text-base font-medium">
+              ไม่มีข้อความในห้อง
+            </p>
+            <p className="text-slate-500 text-xs sm:text-sm mt-1">
+              เริ่มแชทเพื่อเล่นเกม!
+            </p>
           </div>
         )}
       </div>
 
       {/* Controls with modern design */}
       <div className="surface-card p-4 sm:p-6 border-t border-blue-500/20 z-20 shadow-2xl backdrop-blur-2xl bg-gradient-to-b from-slate-900/95 to-slate-800/95">
-        {roomData.room.status === 'IDLE' && (
+        {roomData.room.status === "IDLE" && (
           <div className="flex justify-center mb-4">
             <button
               onClick={onOpenSetupModal}
@@ -313,28 +365,34 @@ const GameScreen: React.FC<GameScreenProps> = ({
 
         <div
           className={`relative transition-all duration-300 ${
-            roomData.room.status !== 'PLAYING' || isEliminated ? 'opacity-50 pointer-events-none' : ''
+            roomData.room.status !== "PLAYING" || isEliminated
+              ? "opacity-50 pointer-events-none"
+              : ""
           }`}
         >
           {/* Input wrapper with glow effect */}
           <div className="relative flex gap-2 sm:gap-3">
             {/* Glow background on focus */}
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/20 via-cyan-600/20 to-blue-600/20 rounded-3xl blur-lg opacity-0 group-focus-within:opacity-100 transition-opacity duration-500"></div>
-            
+
             {/* Text input with modern styling */}
             <div className="relative flex-1 group">
               <input
                 value={chatInput}
                 onChange={(e) => onChatChange(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && onSendChat()}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && !e.shiftKey && onSendChat()
+                }
                 type="text"
                 maxLength={200}
                 placeholder={
-                  roomData.room.status !== 'PLAYING'
-                    ? 'รอผู้สร้างเริ่มเกม...'
+                  roomData.room.status === "CLOSED"
+                    ? "เกมจบแล้ว - รอผู้ดูแลเปิดห้องใหม่"
+                    : roomData.room.status !== "PLAYING"
+                    ? "รอผู้สร้างเริ่มเกม..."
                     : isEliminated
-                    ? 'คุณถูกคัดออกแล้ว'
-                    : 'พิมพ์ข้อความ... (กด Enter เพื่อส่ง)'
+                    ? "คุณถูกคัดออกแล้ว"
+                    : "พิมพ์ข้อความ... (กด Enter เพื่อส่ง)"
                 }
                 className="w-full bg-gradient-to-br from-slate-800/90 to-slate-900/90 text-white text-sm sm:text-base rounded-2xl px-4 sm:px-6 py-3.5 sm:py-4 
                   focus:outline-none focus:ring-2 focus:ring-blue-500/50 
@@ -343,11 +401,19 @@ const GameScreen: React.FC<GameScreenProps> = ({
                   shadow-lg focus:shadow-2xl focus:shadow-blue-500/10
                   hover:border-slate-600/70"
               />
-              
+
               {/* Character counter */}
               {chatInput.length > 0 && (
-                <div className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono transition-colors
-                  ${chatInput.length > 180 ? 'text-red-400' : chatInput.length > 150 ? 'text-yellow-400' : 'text-slate-500'}`}>
+                <div
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono transition-colors
+                  ${
+                    chatInput.length > 180
+                      ? "text-red-400"
+                      : chatInput.length > 150
+                      ? "text-yellow-400"
+                      : "text-slate-500"
+                  }`}
+                >
                   {chatInput.length}/200
                 </div>
               )}
@@ -377,7 +443,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           </div>
 
           {/* Hint text with duplicate warning */}
-          {roomData.room.status === 'PLAYING' && !isEliminated && (
+          {roomData.room.status === "PLAYING" && !isEliminated && (
             <div className="mt-2 px-1 space-y-1">
               <p className="text-xs text-slate-500 flex items-center gap-2">
                 <i className="fas fa-info-circle text-blue-400/60"></i>
@@ -392,7 +458,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           )}
         </div>
 
-        {onResetGame && roomData.room.status === 'PLAYING' && (
+        {onResetGame && roomData.room.status === "PLAYING" && (
           <div className="flex justify-center mt-4 pt-4 border-t border-slate-700/30">
             <button
               onClick={onResetGame}
@@ -422,9 +488,11 @@ const GameScreen: React.FC<GameScreenProps> = ({
               </div>
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                  {roomData.room.bomb_word ? 'แก้ไขข้อมูล' : 'ตั้งค่ากับดัก'}
+                  {roomData.room.bomb_word ? "แก้ไขข้อมูล" : "ตั้งค่ากับดัก"}
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-400 mt-1">กำหนดคำต้องห้ามและคำใบ้</p>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                  กำหนดคำต้องห้ามและคำใบ้
+                </p>
               </div>
             </div>
 
@@ -475,7 +543,9 @@ const GameScreen: React.FC<GameScreenProps> = ({
             <div className="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-6 border-2 border-red-500/40 shadow-xl">
               <i className="fas fa-exclamation-triangle text-3xl"></i>
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-white mb-3">ปิดห้องใช่หรือไม่?</h3>
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-3">
+              ปิดห้องใช่หรือไม่?
+            </h3>
             <p className="text-sm sm:text-base text-slate-400 mb-8 leading-relaxed">
               การกระทำนี้จะปิดห้องสำหรับทุกคน และไม่สามารถกู้คืนได้
             </p>
@@ -492,6 +562,87 @@ const GameScreen: React.FC<GameScreenProps> = ({
               >
                 <i className="fas fa-power-off mr-2"></i>ปิดห้อง
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {roomData.room.status === "CLOSED" && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center px-4 py-10 bg-slate-950/90 backdrop-blur-xl">
+          <div className="w-full max-w-3xl bg-gradient-to-b from-slate-900/90 to-slate-800/90 border border-blue-500/30 rounded-3xl p-6 sm:p-10 shadow-2xl text-center space-y-6">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-blue-300 font-semibold">
+                เกมจบแล้ว
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center justify-center gap-3">
+                <i className="fas fa-trophy text-yellow-300"></i>
+                โพเดียมผู้รอดชีวิต
+              </h2>
+              <p className="text-slate-400 text-sm">
+                ผู้ที่อยู่ได้นานที่สุด 3 คนได้รับคะแนนพิเศษ
+              </p>
+            </div>
+
+            {showPodium ? (
+              <div className="grid gap-4 sm:grid-cols-3">
+                {podiumEntries.map((entry) => (
+                  <div
+                    key={entry.playerId}
+                    className={`relative rounded-3xl p-5 border shadow-xl flex flex-col items-center gap-2 ${
+                      entry.position === 1
+                        ? "bg-gradient-to-b from-yellow-400/30 to-yellow-600/20 border-yellow-300/40"
+                        : entry.position === 2
+                        ? "bg-gradient-to-b from-slate-200/20 to-slate-400/10 border-slate-200/40"
+                        : "bg-gradient-to-b from-amber-700/20 to-amber-900/10 border-amber-500/30"
+                    }`}
+                  >
+                    <div className="text-4xl">
+                      {entry.position === 1
+                        ? "🥇"
+                        : entry.position === 2
+                        ? "🥈"
+                        : "🥉"}
+                    </div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-200">
+                      อันดับ {entry.position}
+                    </p>
+                    <p className="text-lg font-bold text-white">
+                      {entry.playerName}
+                    </p>
+                    <p
+                      className={`text-xs font-semibold ${
+                        entry.status === "survivor"
+                          ? "text-emerald-300"
+                          : "text-red-300"
+                      }`}
+                    >
+                      {entry.status === "survivor" ? "รอดชีวิต" : "ถูกคัดออก"}
+                    </p>
+                    <div className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                      <i className="fas fa-star"></i>+{entry.points} คะแนน
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-400">ยังไม่มีผู้ชนะ</p>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={onLeaveRoom}
+                className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow-lg hover:shadow-blue-500/30 transition-all"
+              >
+                กลับ Lobby
+              </button>
+              {onResetGame && isOwner && (
+                <button
+                  onClick={onResetGame}
+                  className="px-5 py-3 rounded-2xl border border-slate-600 text-slate-200 hover:border-blue-400 hover:text-white transition-all"
+                >
+                  รีเซ็ตเพื่อเริ่มใหม่
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -19,10 +19,20 @@ export interface Message {
   isBoom: boolean;
 }
 
+export interface PodiumEntry {
+  position: number;
+  playerId: string;
+  playerName: string;
+  points: number;
+  status: 'survivor' | 'eliminated';
+  eliminatedAt?: string | null;
+}
+
 export interface RoomData {
   room: DbRoom;
   players: DbPlayer[];
   messages: DbMessage[];
+  podium?: PodiumEntry[];
 }
 
 export type GameScreen = 'loading' | 'name' | 'lobby' | 'game';
