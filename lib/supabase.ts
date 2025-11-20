@@ -20,7 +20,18 @@ export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<D
   // Initialize Supabase client once per application lifecycle
   if (!supabase && hasSupabaseConfig) {
     try {
-      supabase = createClient<Database>(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+      supabase = createClient<Database>(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+        realtime: {
+          params: {
+            eventsPerSecond: 2
+          }
+        },
+        global: {
+          headers: {
+            'x-client-info': 'chat-bomb-game'
+          }
+        }
+      });
       console.log('✅ Supabase client initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Supabase:', error);
@@ -141,9 +152,13 @@ export const subscribeToRoom = (
   roomId: string, 
   callback: (payload: any) => void
 ): RealtimeChannel | null => {
+  // Disable realtime entirely - always use polling fallback
+  console.warn('⚠️ Realtime disabled. Using polling fallback (every 3s)');
+  return null;
+
+  /* Original realtime code - commented out
   if (!supabase) {
     console.warn('⚠️ Supabase not initialized. Realtime disabled. Using polling fallback.');
-    // Return a mock channel that does nothing
     return null;
   }
 
@@ -188,6 +203,7 @@ export const subscribeToRoom = (
     console.error('❌ Failed to subscribe to room:', error);
     return null;
   }
+  */
 };
 
 export const resetGame = async (roomId: string, ownerId: string) => {
