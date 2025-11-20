@@ -1,9 +1,6 @@
 {
-  "version": 2,
-  "functions": {
-    "api/**/*": {
-      "runtime": "nodejs18.x",
-      "maxDuration": 10
-    }
+  "buildCommand": "npm run build",
+  "env": {
+    "NODE_ENV": "production"
   }
 }
