@@ -6,17 +6,25 @@ import { RoomData } from '@/types/game';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY ต้องถูกตั้งค่าใน Environment');
+// Graceful fallback with warning instead of throwing
+const hasSupabaseConfig = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+if (typeof window !== 'undefined' && !hasSupabaseConfig) {
+  console.warn('⚠️ Supabase environment variables not configured. Realtime features will be disabled.');
 }
 
-let supabase: SupabaseClient<Database>;
+let supabase: SupabaseClient<Database> | null = null;
 let currentUserId: string | null = null;
 
-export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<Database>; userId: string }> => {
+export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<Database> | null; userId: string }> => {
   // Initialize Supabase client once per application lifecycle
-  if (!supabase) {
-    supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
+  if (!supabase && hasSupabaseConfig) {
+    try {
+      supabase = createClient<Database>(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+      console.log('✅ Supabase client initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Supabase:', error);
+    }
   }
 
   // Reuse persisted anonymous user id so server-side ownership checks keep working after refresh
@@ -42,22 +50,41 @@ const generateUserId = (): string => {
 type ApiResponse<T> = { data: T };
 
 const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(path, {
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-    ...init,
-  });
+  // Add timeout to prevent hanging requests
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-  const payload = (await response.json()) as ApiResponse<T> & { error?: string };
+  try {
+    const response = await fetch(path, {
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers || {}),
+      },
+      signal: controller.signal,
+      ...init,
+    });
 
-  if (!response.ok) {
-    throw new Error(payload.error || 'Request failed');
+    clearTimeout(timeoutId);
+
+    const payload = (await response.json()) as ApiResponse<T> & { error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed with status ${response.status}`);
+    }
+
+    return payload.data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout - please check your connection');
+      }
+      throw error;
+    }
+    throw new Error('Unknown error occurred');
   }
-
-  return payload.data;
 };
 
 export const createRoom = async (roomId: string, ownerId: string, ownerName: string) => {
@@ -113,42 +140,54 @@ export const closeRoom = async (roomId: string, ownerId: string) => {
 export const subscribeToRoom = (
   roomId: string, 
   callback: (payload: any) => void
-): RealtimeChannel => {
-  const channel = supabase
-    .channel(`room_${roomId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'rooms',
-        filter: `room_id=eq.${roomId}`,
-      },
-      callback
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'messages',
-        filter: `room_id=eq.${roomId}`,
-      },
-      callback
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'room_players',
-        filter: `room_id=eq.${roomId}`,
-      },
-      callback
-    )
-    .subscribe();
+): RealtimeChannel | null => {
+  if (!supabase) {
+    console.warn('⚠️ Supabase not initialized. Realtime disabled. Using polling fallback.');
+    // Return a mock channel that does nothing
+    return null;
+  }
 
-  return channel;
+  try {
+    const channel = supabase
+      .channel(`room_${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rooms',
+          filter: `room_id=eq.${roomId}`,
+        },
+        callback
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_id=eq.${roomId}`,
+        },
+        callback
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'room_players',
+          filter: `room_id=eq.${roomId}`,
+        },
+        callback
+      )
+      .subscribe();
+
+    console.log(`✅ Subscribed to room ${roomId}`);
+    return channel;
+  } catch (error) {
+    console.error('❌ Failed to subscribe to room:', error);
+    return null;
+  }
 };
 
 export const resetGame = async (roomId: string, ownerId: string) => {

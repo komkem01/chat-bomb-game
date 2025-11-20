@@ -75,34 +75,39 @@ export const joinRoomService = async (roomId: string, playerId: string, playerNa
 };
 
 export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
-  const room = await getRoomByCode(roomId);
+  try {
+    const room = await getRoomByCode(roomId);
 
-  const [playersResult, messagesResult] = await Promise.all([
-    query<DbPlayer>(
-      `SELECT * FROM room_players
-       WHERE room_id = $1
-       ORDER BY joined_at ASC`,
-      [roomId]
-    ),
-    query<DbMessage>(
-      `SELECT *
-         FROM (
-           SELECT *
-             FROM messages
-            WHERE room_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2
-         ) recent_messages
-        ORDER BY created_at ASC`,
-      [roomId, MAX_MESSAGE_HISTORY]
-    ),
-  ]);
+    const [playersResult, messagesResult] = await Promise.all([
+      query<DbPlayer>(
+        `SELECT * FROM room_players
+         WHERE room_id = $1
+         ORDER BY joined_at ASC`,
+        [roomId]
+      ),
+      query<DbMessage>(
+        `SELECT *
+           FROM (
+             SELECT *
+               FROM messages
+              WHERE room_id = $1
+              ORDER BY created_at DESC
+              LIMIT $2
+           ) recent_messages
+          ORDER BY created_at ASC`,
+        [roomId, MAX_MESSAGE_HISTORY]
+      ),
+    ]);
 
-  return {
-    room,
-    players: playersResult.rows,
-    messages: messagesResult.rows,
-  };
+    return {
+      room,
+      players: playersResult.rows,
+      messages: messagesResult.rows,
+    };
+  } catch (error) {
+    console.error(`Error getting room data for ${roomId}:`, error);
+    throw error;
+  }
 };
 
 export const updateRoomSettingsService = async (

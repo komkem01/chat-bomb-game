@@ -174,9 +174,14 @@ export default function ChatBombGame() {
         roomFetchTimeoutRef.current = null;
       }
 
-      const fetchSnapshot = async () => {
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+
+      const fetchSnapshot = async (isInitialLoad = false) => {
         try {
           const data = await getRoomData(roomId);
+          retryCount = 0; // Reset on success
+          
           if (data.room.status === 'CLOSED') {
             showToast('ห้องถูกปิดโดยผู้ดูแล', 'info');
             leaveRoom();
@@ -185,20 +190,45 @@ export default function ChatBombGame() {
           setGameState((prev) => ({ ...prev, currentRoomData: data }));
         } catch (error) {
           console.error('Error fetching room data:', error);
+          
+          // Retry logic for initial load
+          if (isInitialLoad && retryCount < MAX_RETRIES) {
+            retryCount++;
+            console.log(`Retrying... (${retryCount}/${MAX_RETRIES})`);
+            setTimeout(() => fetchSnapshot(true), 1000 * retryCount); // Progressive delay
+            return;
+          }
+          
+          // Show error and leave only after all retries failed
           showToast('ไม่สามารถโหลดข้อมูลห้องได้', 'error');
           leaveRoom();
         }
       };
 
-      fetchSnapshot();
+      fetchSnapshot(true); // Initial load with retry
 
-      unsubscribeRoomListener.current = subscribeToRoom(roomId, () => {
+      const channel = subscribeToRoom(roomId, () => {
         if (roomFetchTimeoutRef.current) return;
         roomFetchTimeoutRef.current = setTimeout(() => {
           roomFetchTimeoutRef.current = null;
-          fetchSnapshot();
+          fetchSnapshot(false); // Realtime updates without retry
         }, FETCH_DEBOUNCE_MS);
       });
+
+      if (channel) {
+        unsubscribeRoomListener.current = channel;
+      } else {
+        // Polling fallback if realtime unavailable
+        console.warn('⚠️ Using polling fallback (every 3s)');
+        const pollInterval = setInterval(() => {
+          fetchSnapshot(false);
+        }, 3000);
+        
+        // Store cleanup in a pseudo-channel object
+        unsubscribeRoomListener.current = {
+          unsubscribe: () => clearInterval(pollInterval),
+        } as any;
+      }
     };
 
     const openSetupModal = () => {
