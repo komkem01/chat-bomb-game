@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Bomb: กับดักคำระเบิด 💣</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Kanit -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+            background-attachment: fixed;
+        }
+        /* Glassmorphism Utils */
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-heavy {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.3s ease-out forwards;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toast-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,58,138,0.9));
+            box-shadow: 0 20px 35px rgba(8, 47, 73, 0.45);
+        }
+        .toast-card::before {
+            content: '';
+            position: absolute;
+            inset: -40% auto auto -40%;
+            width: 120px;
+            height: 120px;
+            background: radial-gradient(circle, rgba(255,255,255,0.25), transparent 60%);
+            opacity: 0.4;
+        }
+        .toast-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            transform-origin: left;
+            animation: toast-progress var(--toast-duration, 3500ms) linear forwards;
+        }
+        .toast-card.pause .toast-progress { animation-play-state: paused; }
+        @keyframes toast-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    </style>
+
+    <script>
+        // --- Globals ---
+        let userId = null;
+        let playerName = null;
+        let currentRoomId = null;
+        let currentRoomData = null;
+        let gameInterval = null;
+        let lastRenderHash = null; 
+        let saveTimeout = null; 
+        
+        // Performance constants
+        const SESSION_TTL = 60 * 60 * 1000; // 1 hour
+        const POLL_INTERVAL = 1000; // ms
+        const ROOM_LIST_REFRESH_MS = 8000;
+        const MESSAGE_HISTORY_LIMIT = 200;
+        const MAX_VISIBLE_MESSAGES = 60;
+        const MAX_ROOMS_DISPLAY = 5;
+        
+        // Local Storage Keys
+        const STORAGE_PREFIX = 'chat_bomb_';
+        const ROOMS_KEY = STORAGE_PREFIX + 'rooms';
+        const SESSION_KEY = STORAGE_PREFIX + 'session';
+        
+        // Cache
+        let roomCache = new Map();
+        const MAX_CACHE_SIZE = 10;
+        
+        // Helpers
+        const generateUserId = () => 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        // --- Storage & Session Logic (Original Logic Kept Intact) ---
+        const saveSession = () => {
+            if (userId && playerName) {
+                localStorage.setItem(SESSION_KEY, JSON.stringify({
+                    userId, playerName, currentRoomId, timestamp: Date.now()
+                }));
+            }
+        };
+        
+        const loadSession = () => {
+            try {
+                const session = localStorage.getItem(SESSION_KEY);
+                if (session) {
+                    const data = JSON.parse(session);
+                    if (Date.now() - data.timestamp < SESSION_TTL) return data;
+                }
+            } catch (e) { console.warn('Session load failed', e); }
+            return null;
+        };
+        
+        const getAllRooms = () => {
+            const rooms = localStorage.getItem(ROOMS_KEY);
+            return rooms ? JSON.parse(rooms) : {};
+        };
+        
+        const saveRoom = (roomId, roomData) => {
+            if (roomData.messages && roomData.messages.length > MESSAGE_HISTORY_LIMIT) {
+                roomData.messages = roomData.messages.slice(-MESSAGE_HISTORY_LIMIT);
+            }
+            const snapshot = { ...roomData, lastUpdated: Date.now() };
+            roomCache.set(roomId, snapshot);
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                const rooms = getAllRooms();
+                rooms[roomId] = roomCache.get(roomId);
+                // Limit & Save logic
+                const keys = Object.keys(rooms);
+                if (keys.length > 50) {
+                    const sorted = keys.sort((a,b) => (rooms[b].lastUpdated||0) - (rooms[a].lastUpdated||0));
+                    const newRooms = {};
+                    sorted.slice(0,30).forEach(k => newRooms[k] = rooms[k]);
+                    localStorage.setItem(ROOMS_KEY, JSON.stringify(newRooms));
+                } else {
+                    localStorage.setItem(ROOMS_KEY, JSON.stringify(rooms));
+                }
+                window.dispatchEvent(new CustomEvent('roomUpdated', { detail: { roomId, roomData: roomCache.get(roomId) } }));
+            }, 100);
+        };
+        
+        const getRoom = (roomId) => {
+            if (roomCache.has(roomId)) return roomCache.get(roomId);
+            const rooms = getAllRooms();
+            const room = rooms[roomId];
+            if (room) roomCache.set(roomId, room);
+            return room;
+        };
+        
+        const deleteOldRooms = () => {
+            const rooms = getAllRooms();
+            const now = Date.now();
+            let changed = false;
+            Object.keys(rooms).forEach(id => {
+                if (now - rooms[id].lastUpdated > 3600000) { delete rooms[id]; changed = true; }
+            });
+            if(changed) localStorage.setItem(ROOMS_KEY, JSON.stringify(rooms));
+        };
+
+        const ensureRoomOwner = (room) => {
+            if (!room) return room;
+            if (!room.ownerId && room.players?.length) {
+                room.ownerId = room.players[0].id;
+                room.ownerName = room.players[0].name;
+            }
+            return room;
+        };
+
+        const isCurrentPlayerOwner = () => {
+            if (!currentRoomData) return false;
+            const ownerId = currentRoomData.ownerId || currentRoomData.players?.[0]?.id;
+            return ownerId ? ownerId === userId : false;
+        };
+
+        const removeRoomFromStorage = (roomId) => {
+            if (!roomId) return;
+            const rooms = getAllRooms();
+            if (rooms[roomId]) {
+                delete rooms[roomId];
+                localStorage.setItem(ROOMS_KEY, JSON.stringify(rooms));
+            }
+            roomCache.delete(roomId);
+        };
+
+        const closeRoom = () => {
+            if (!currentRoomId || !currentRoomData) return;
+            if (!isCurrentPlayerOwner()) {
+                showToast('เฉพาะเจ้าของห้องเท่านั้นที่ปิดห้องได้', 'error');
+                return;
+            }
+            const confirmed = window.confirm('ยืนยันปิดห้องหรือไม่? ทุกคนจะถูกตัดการเชื่อมต่อ');
+            if (!confirmed) return;
+            removeRoomFromStorage(currentRoomId);
+            showToast('ปิดห้องเรียบร้อยแล้ว', 'success');
+            leaveRoom();
+        };
+
+        const handleStorageSync = (event) => {
+            if (!event) return;
+            if (event.key === ROOMS_KEY) {
+                roomCache.clear();
+                if (currentRoomId) {
+                    const latest = getRoom(currentRoomId);
+                    if (latest) {
+                        currentRoomData = latest;
+                        renderGame(latest);
+                    }
+                }
+                if (!document.getElementById('lobby-screen').classList.contains('hidden')) {
+                    refreshRoomList();
+                }
+            }
+            if (event.key === SESSION_KEY) {
+                const session = loadSession();
+                if (session) {
+                    playerName = session.playerName;
+                    const display = document.getElementById('player-display-name');
+                    if (display) display.textContent = playerName || '---';
+                }
+            }
+        };
+
+        // --- Initialization ---
+        const init = () => {
+            deleteOldRooms();
+            setupUI();
+            
+            const session = loadSession();
+            if (session) {
+                userId = session.userId;
+                playerName = session.playerName;
+                if (session.currentRoomId && getRoom(session.currentRoomId)) {
+                    currentRoomId = session.currentRoomId;
+                    document.getElementById('loading-screen').classList.add('hidden');
+                    document.getElementById('lobby-screen').classList.remove('hidden');
+                    document.getElementById('player-display-name').textContent = playerName;
+                    showRejoinDialog();
+                    return;
+                }
+            }
+            
+            // New User
+            userId = generateUserId();
+            document.getElementById('name-screen').classList.remove('hidden');
+            document.getElementById('loading-screen').classList.add('hidden');
+            
+            window.addEventListener('roomUpdated', (e) => {
+                if (e.detail.roomId === currentRoomId) {
+                    currentRoomData = e.detail.roomData;
+                    renderGame(currentRoomData);
+                }
+            });
+            window.addEventListener('storage', handleStorageSync);
+            document.addEventListener('visibilitychange', saveSession);
+            window.addEventListener('beforeunload', saveSession);
+        };
+        
+        const showRejoinDialog = () => {
+            const dialog = document.createElement('div');
+            dialog.className = 'fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 animate-fade-in-up';
+            dialog.innerHTML = `
+                <div class="bg-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-600 text-center">
+                    <div class="mb-4 text-blue-400 text-4xl"><i class="fas fa-history"></i></div>
+                    <h3 class="text-xl font-bold text-white mb-2">กลับเข้าห้องเดิม?</h3>
+                    <p class="text-gray-400 text-sm mb-6">คุณอยู่ในห้อง <span class="text-yellow-400 font-mono">${currentRoomId}</span> ค้างไว้</p>
+                    <div class="flex gap-3">
+                        <button id="btn-new-session" class="flex-1 bg-slate-700 text-white py-3 rounded-xl hover:bg-slate-600 transition">ออก</button>
+                        <button id="btn-rejoin" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-500 shadow-lg shadow-blue-500/30 transition">เข้าห้องเดิม</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+            document.getElementById('btn-rejoin').onclick = () => { enterGame(currentRoomId); document.body.removeChild(dialog); };
+            document.getElementById('btn-new-session').onclick = () => { 
+                currentRoomId = null; 
+                document.getElementById('name-screen').classList.remove('hidden');
+                document.getElementById('lobby-screen').classList.add('hidden');
+                document.body.removeChild(dialog);
+            };
+        };
+
+        // --- UI Handlers ---
+        const setupUI = () => {
+            document.getElementById('btn-enter-game').addEventListener('click', enterWithName);
+            document.getElementById('player-name-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') enterWithName(); });
+            
+            document.getElementById('btn-create-room').addEventListener('click', createRoom);
+            document.getElementById('btn-join-room').addEventListener('click', joinRoom);
+            document.getElementById('btn-leave-room').addEventListener('click', leaveRoom);
+            
+            const roomCodeInput = document.getElementById('input-room-code');
+            if (roomCodeInput) {
+                roomCodeInput.addEventListener('input', (e) => {
+                    let val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    e.target.value = val;
+                    if (val.length === 6) setTimeout(() => joinRoom(), 500);
+                });
+                roomCodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') joinRoom(); });
+            }
+            
+            setInterval(() => {
+                if (!document.getElementById('lobby-screen').classList.contains('hidden')) refreshRoomList();
+            }, ROOM_LIST_REFRESH_MS);
+            
+            document.getElementById('btn-start-round').addEventListener('click', showSetWordModal);
+            document.getElementById('btn-edit-bomb').addEventListener('click', showEditBombModal);
+            document.getElementById('btn-confirm-word').addEventListener('click', setBombWord);
+            document.getElementById('btn-send-chat').addEventListener('click', sendChatMessage);
+            document.getElementById('chat-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+            document.getElementById('btn-copy-code').addEventListener('click', copyRoomCode);
+            const closeRoomBtn = document.getElementById('btn-close-room');
+            if (closeRoomBtn) closeRoomBtn.addEventListener('click', closeRoom);
+            
+            // Toast container
+            const toastContainer = document.createElement('div');
+            toastContainer.id = 'toast-container';
+            toastContainer.className = 'fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none';
+            document.body.appendChild(toastContainer);
+        };
+        
+        const showToast = (msg, type='info') => {
+            const container = document.getElementById('toast-container');
+            const toneMap = {
+                success: { emoji: '✨', title: 'สำเร็จ!', accent: 'linear-gradient(90deg,#22c55e,#4ade80)', text: 'text-green-100' },
+                error:   { emoji: '💥', title: 'มีบางอย่างผิดพลาด', accent: 'linear-gradient(90deg,#ef4444,#f97316)', text: 'text-red-100' },
+                info:    { emoji: '💡', title: 'แจ้งเตือน', accent: 'linear-gradient(90deg,#38bdf8,#6366f1)', text: 'text-blue-100' },
+                warning: { emoji: '⚠️', title: 'ระวังนะ', accent: 'linear-gradient(90deg,#facc15,#fb923c)', text: 'text-yellow-100' }
+            };
+            const tone = toneMap[type] || toneMap.info;
+            const toast = document.createElement('div');
+            toast.className = 'toast-card text-white px-5 py-4 transition-all duration-300 translate-x-full pointer-events-auto max-w-sm';
+            toast.style.setProperty('--toast-duration', '3800ms');
+            toast.innerHTML = `
+                <div class="relative flex items-start gap-3 z-10">
+                    <div class="text-2xl drop-shadow-lg">${tone.emoji}</div>
+                    <div class="flex-1">
+                        <p class="text-sm font-semibold tracking-wide uppercase ${tone.text}">${tone.title}</p>
+                        <p class="text-sm text-gray-100 leading-snug">${msg}</p>
+                    </div>
+                    <button class="toast-close text-gray-400 hover:text-white text-lg px-2" aria-label="ปิดแจ้งเตือน">×</button>
+                </div>
+                <span class="toast-progress" style="background:${tone.accent}"></span>
+            `;
+
+            const dismiss = () => {
+                toast.classList.add('opacity-0', 'translate-x-full');
+                setTimeout(() => toast.remove(), 250);
+            };
+
+            const duration = 3800;
+            let timer = setTimeout(dismiss, duration);
+
+            toast.addEventListener('mouseenter', () => {
+                toast.classList.add('pause');
+                clearTimeout(timer);
+            });
+            toast.addEventListener('mouseleave', () => {
+                toast.classList.remove('pause');
+                timer = setTimeout(dismiss, duration);
+            });
+            toast.querySelector('.toast-close').addEventListener('click', () => {
+                clearTimeout(timer);
+                dismiss();
+            });
+
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-x-full'));
+        };
+
+        const enterWithName = () => {
+            const name = document.getElementById('player-name-input').value.trim();
+            if (!name) return showToast('กรุณากรอกชื่อของคุณ!', 'error');
+            if (name.length > 15) return showToast('ชื่อยาวเกินไป (สูงสุด 15 ตัวอักษร)', 'error');
+            
+            playerName = name;
+            saveSession();
+            
+            const nameScreen = document.getElementById('name-screen');
+            const lobbyScreen = document.getElementById('lobby-screen');
+            
+            nameScreen.style.opacity = '0';
+            setTimeout(() => {
+                nameScreen.classList.add('hidden');
+                lobbyScreen.classList.remove('hidden');
+                refreshRoomList();
+            }, 300);
+            
+            document.getElementById('player-display-name').textContent = playerName;
+            showToast(`สวัสดี ${playerName}!`, 'success');
+        };
+
+        // --- Game Logic ---
+        const generateRoomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+        
+        const refreshRoomList = () => {
+            const rooms = getAllRooms();
+            const roomListEl = document.getElementById('room-list');
+            if (!roomListEl) return;
+            
+            const activeRooms = Object.keys(rooms).filter(id => {
+                const r = rooms[id];
+                return (Date.now() - r.lastUpdated < 3600000) && r.players?.length > 0;
+            }).sort((a,b) => rooms[b].lastUpdated - rooms[a].lastUpdated).slice(0, MAX_ROOMS_DISPLAY);
+            
+            if (activeRooms.length === 0) {
+                roomListEl.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-wind text-3xl mb-2 opacity-50"></i>
+                        <p>ยังไม่มีห้องว่าง สร้างห้องใหม่เลย!</p>
+                    </div>`;
+                return;
+            }
+            
+            roomListEl.innerHTML = activeRooms.map(id => {
+                const room = rooms[id];
+                const isPlaying = room.status === 'PLAYING';
+                return `
+                    <div class="group bg-slate-800/50 hover:bg-slate-700/80 border border-slate-700 hover:border-blue-500/50 p-4 rounded-xl cursor-pointer transition-all duration-200 mb-3" onclick="document.getElementById('input-room-code').value='${id}'; joinRoom();">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-slate-900 p-2 rounded-lg text-yellow-400 font-mono font-bold tracking-wider border border-slate-700 group-hover:border-yellow-500/50 transition-colors">
+                                    ${id}
+                                </div>
+                                <div class="text-sm text-gray-300">
+                                    <i class="fas fa-users text-xs text-gray-500 mr-1"></i> ${room.players?.length || 0} คน
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-1 rounded text-xs font-bold ${isPlaying ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}">
+                                    ${isPlaying ? 'กำลังเล่น' : 'รอผู้เล่น'}
+                                </span>
+                                <i class="fas fa-chevron-right text-gray-600 group-hover:text-white transition-colors"></i>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        const createRoom = () => {
+            const id = generateRoomCode();
+            saveRoom(id, {
+                roomId: id, status: 'IDLE', bombWord: null, hint: null, setterId: null, setterName: null,
+                messages: [], loser: null, eliminatedPlayers: [], createdAt: Date.now(),
+                players: [{ id: userId, name: playerName }]
+            });
+            enterGame(id);
+        };
+
+        const joinRoom = () => {
+            const code = document.getElementById('input-room-code').value.trim();
+            if (!code || code.length !== 6) return showToast('รหัสห้องต้องเป็นตัวเลข 6 หลัก', 'error');
+            
+            const room = getRoom(code);
+            if (room) {
+                if (!room.players.find(p => p.id === userId)) {
+                    room.players.push({ id: userId, name: playerName });
+                    saveRoom(code, room);
+                }
+                enterGame(code);
+            } else {
+                showToast('ไม่พบห้องนี้ กรุณาตรวจสอบรหัส', 'error');
+            }
+        };
+
+        const enterGame = (id) => {
+            currentRoomId = id;
+            currentRoomData = getRoom(id);
+            document.getElementById('lobby-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('display-room-code').textContent = id;
+            
+            if(gameInterval) clearInterval(gameInterval);
+            gameInterval = setInterval(() => {
+                const latest = getRoom(currentRoomId);
+                if (latest && latest.lastUpdated !== currentRoomData.lastUpdated) {
+                    currentRoomData = latest;
+                    renderGame(latest);
+                }
+            }, POLL_INTERVAL);
+            renderGame(currentRoomData);
+        };
+
+        const leaveRoom = () => {
+            if (gameInterval) clearInterval(gameInterval);
+            currentRoomId = null;
+            currentRoomData = null;
+            lastRenderHash = null;
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('lobby-screen').classList.remove('hidden');
+            document.getElementById('chat-box').innerHTML = '';
+            document.getElementById('input-room-code').value = '';
+            refreshRoomList();
+        };
+        
+        const copyRoomCode = () => {
+            const code = document.getElementById('display-room-code').textContent;
+            navigator.clipboard.writeText(code).then(() => showToast('คัดลอกรหัสแล้ว!', 'success'));
+        };
+        
+        // --- Game Play Logic ---
+        const showSetWordModal = () => {
+            document.getElementById('input-bomb-word').value = '';
+            document.getElementById('input-hint').value = '';
+            document.getElementById('setup-modal').classList.remove('hidden');
+        };
+        
+        const showEditBombModal = () => {
+            if (!currentRoomData || currentRoomData.setterId !== userId) return;
+            document.getElementById('input-bomb-word').value = currentRoomData.bombWord || '';
+            document.getElementById('input-hint').value = currentRoomData.hint || '';
+            document.getElementById('setup-modal').classList.remove('hidden');
+        };
+        
+        const setBombWord = () => {
+            const word = document.getElementById('input-bomb-word').value.trim();
+            const hint = document.getElementById('input-hint').value.trim();
+            if (!word) return showToast('ต้องใส่คำระเบิดนะ!', 'error');
+            
+            // Logic check if setter eliminated
+            if (currentRoomData.eliminatedPlayers?.some(p => p.id === userId)) {
+                document.getElementById('setup-modal').classList.add('hidden');
+                return showToast('คุณแพ้ไปแล้ว ตั้งระเบิดไม่ได้!', 'error');
+            }
+
+            const isEditing = currentRoomData.status === 'PLAYING';
+            
+            currentRoomData.status = 'PLAYING';
+            currentRoomData.bombWord = word.toLowerCase();
+            currentRoomData.hint = hint || 'ไม่มีคำใบ้';
+            currentRoomData.setterId = userId;
+            currentRoomData.setterName = playerName;
+            
+            if (!isEditing) {
+                currentRoomData.messages = [];
+                currentRoomData.loser = null;
+                if (!currentRoomData.eliminatedPlayers) currentRoomData.eliminatedPlayers = [];
+            } else {
+                // Add system message for edit
+                currentRoomData.messages.push({
+                    sender: 'System',
+                    senderId: 'system',
+                    text: `⚙️ ${playerName} แก้ไขคำระเบิดและคำใบ้แล้ว`,
+                    timestamp: Date.now(),
+                    isSystem: true
+                });
+                showToast('แก้ไขคำระเบิดเรียบร้อย!', 'success');
+            }
+            
+            saveRoom(currentRoomId, currentRoomData);
+            document.getElementById('setup-modal').classList.add('hidden');
+            document.getElementById('input-bomb-word').value = '';
+            document.getElementById('input-hint').value = '';
+        };
+        
+        const sendChatMessage = () => {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            
+            if (!currentRoomData || currentRoomData.status !== 'PLAYING') return;
+            if (currentRoomData.eliminatedPlayers?.some(p => p.id === userId)) return showToast('คุณโดนระเบิดแล้ว เงียบไว้ก่อน!', 'error');
+            
+            // Check for bomb word
+            const containsBombWord = text.toLowerCase().includes(currentRoomData.bombWord);
+            
+            // Check for duplicate message (same text from non-system messages)
+            const isDuplicate = currentRoomData.messages?.some(msg => 
+                !msg.isSystem && msg.text.toLowerCase() === text.toLowerCase()
+            );
+            
+            const isBoom = containsBombWord || isDuplicate;
+            
+            currentRoomData.messages.push({ 
+                sender: playerName, senderId: userId, text, timestamp: Date.now(), isBoom, isDuplicate 
+            });
+            if (currentRoomData.messages.length > MESSAGE_HISTORY_LIMIT) {
+                currentRoomData.messages = currentRoomData.messages.slice(-MESSAGE_HISTORY_LIMIT);
+            }
+            
+            if (isBoom) {
+                if (!currentRoomData.eliminatedPlayers.some(p => p.id === userId)) {
+                    currentRoomData.eliminatedPlayers.push({ id: userId, name: playerName, timestamp: Date.now() });
+                }
+                currentRoomData.lastLoser = userId;
+                currentRoomData.lastLoserName = playerName;
+                
+                // Check if all players are eliminated
+                const activePlayers = currentRoomData.players.length - currentRoomData.eliminatedPlayers.length;
+                if (activePlayers <= 1) {
+                    currentRoomData.status = 'GAME_OVER';
+                    currentRoomData.loser = userId;
+                    currentRoomData.loserName = playerName;
+                } else {
+                    // Game continues, just show notification
+                    const reason = isDuplicate ? 'พิมพ์ซ้ำ' : 'เหยียบคำระเบิด';
+                    currentRoomData.messages.push({
+                        sender: 'System',
+                        senderId: 'system',
+                        text: `💥 ${playerName} โดนระเบิด! (${reason}) เหลือผู้เล่น ${activePlayers} คน`,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                }
+            }
+            saveRoom(currentRoomId, currentRoomData);
+        };
+        
+        const resetGame = () => {
+            if (!currentRoomId || !currentRoomData) return;
+            currentRoomData.status = 'IDLE';
+            currentRoomData.bombWord = null;
+            currentRoomData.hint = null;
+            currentRoomData.eliminatedPlayers = [];
+            currentRoomData.messages = [];
+            currentRoomData.lastLoser = null;
+            currentRoomData.lastLoserName = null;
+            saveRoom(currentRoomId, currentRoomData);
+            showToast('เริ่มรอบใหม่!', 'info');
+        };
+
+        // --- Rendering ---
+        const renderGame = (data) => {
+            if (!data) return;
+            const renderSignature = [
+                data.status,
+                data.messages?.length || 0,
+                data.messages?.[data.messages.length - 1]?.timestamp || 0,
+                data.players?.length || 0,
+                data.eliminatedPlayers?.length || 0,
+                data.hint || '',
+                data.bombWord || ''
+            ].join('|');
+            if (renderSignature === lastRenderHash) return;
+            lastRenderHash = renderSignature;
+
+            const chatBox = document.getElementById('chat-box');
+            
+            // Chat Rendering (limit DOM nodes for performance)
+            const msgs = data.messages ? data.messages.slice(-MAX_VISIBLE_MESSAGES) : [];
+            const shouldScroll = Math.abs((chatBox.scrollTop + chatBox.clientHeight) - chatBox.scrollHeight) < 10;
+            
+            chatBox.innerHTML = msgs.map(msg => {
+                // System messages
+                if (msg.isSystem) {
+                    return `
+                        <div class="flex w-full justify-center mb-3 animate-fade-in-up">
+                            <div class="bg-slate-800/80 border border-slate-600 px-4 py-2 rounded-full shadow-md text-xs text-gray-300 font-medium">
+                                ${msg.text}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                const isMe = msg.senderId === userId;
+                const boomClass = msg.isBoom ? 'bg-red-600 border-2 border-yellow-400 text-white animate-bounce shadow-red-500/50' : 
+                                (isMe ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white' : 'bg-slate-700 text-gray-200');
+                
+                return `
+                    <div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3 animate-fade-in-up">
+                        <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[75%]">
+                            <span class="text-[10px] text-gray-400 mb-1 px-1">${isMe ? 'ฉัน' : msg.sender}</span>
+                            <div class="px-4 py-2 rounded-2xl shadow-lg ${boomClass} break-words text-sm relative">
+                                ${msg.text}
+                                ${msg.isBoom ? '<span class="absolute -top-3 -right-3 text-2xl">💥</span>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            if (shouldScroll) {
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+            
+            // State UI
+            const statusEl = document.getElementById('game-status');
+            const hintEl = document.getElementById('hint-text');
+            const controls = document.getElementById('game-controls');
+            const inputArea = document.getElementById('input-area');
+            const winnerDisplay = document.getElementById('winner-display');
+            const closeRoomBtn = document.getElementById('btn-close-room');
+
+            if (closeRoomBtn) {
+                const isOwner = isCurrentPlayerOwner();
+                closeRoomBtn.classList.toggle('hidden', !isOwner);
+            }
+            
+            // Stats
+            document.getElementById('alive-count').textContent = (data.players?.length || 0) - (data.eliminatedPlayers?.length || 0);
+            document.getElementById('dead-count').textContent = data.eliminatedPlayers?.length || 0;
+            
+            const isEliminated = data.eliminatedPlayers?.some(p => p.id === userId);
+            
+            const editBombControls = document.getElementById('edit-bomb-controls');
+            const isSetter = data.setterId === userId;
+            
+            if (data.status === 'IDLE') {
+                statusEl.innerHTML = '<span class="flex items-center gap-2 text-gray-400"><i class="fas fa-clock"></i> รอตั้งระเบิด</span>';
+                hintEl.innerHTML = '<span class="text-gray-500 text-sm italic">ยังไม่มีคำใบ้...</span>';
+                if (!isEliminated) controls.classList.remove('hidden');
+                else controls.classList.add('hidden');
+                if (editBombControls) editBombControls.classList.add('hidden');
+                
+                inputArea.classList.add('opacity-50', 'pointer-events-none');
+                winnerDisplay.classList.add('hidden');
+            } 
+            else if (data.status === 'PLAYING') {
+                statusEl.innerHTML = '<span class="flex items-center gap-2 text-green-400 animate-pulse"><i class="fas fa-circle"></i> กำลังเล่น</span>';
+                hintEl.innerHTML = `<span class="text-yellow-400 font-bold text-lg drop-shadow-md">${data.hint}</span>`;
+                controls.classList.add('hidden');
+                
+                // Show edit button only for setter who is not eliminated
+                if (editBombControls) {
+                    if (isSetter && !isEliminated) {
+                        editBombControls.classList.remove('hidden');
+                    } else {
+                        editBombControls.classList.add('hidden');
+                    }
+                }
+                
+                if (isEliminated) {
+                    inputArea.classList.add('opacity-40', 'pointer-events-none');
+                    document.getElementById('chat-input').placeholder = 'คุณโดนระเบิดแล้ว! (ดูเพื่อนเล่น)';
+                } else {
+                    inputArea.classList.remove('opacity-50', 'pointer-events-none');
+                    document.getElementById('chat-input').placeholder = 'พิมพ์ข้อความ... (ระวังระเบิด!)';
+                }
+                winnerDisplay.classList.add('hidden');
+            } 
+            else if (data.status === 'GAME_OVER') {
+                statusEl.innerHTML = '<span class="text-red-500 font-bold">💥 ระเบิดลง!</span>';
+                winnerDisplay.classList.remove('hidden');
+                winnerDisplay.innerHTML = `
+                    <div class="glass-heavy p-8 rounded-3xl text-center shadow-2xl border border-red-500/30 transform scale-100 animate-fade-in-up">
+                        <div class="text-6xl mb-4">💣</div>
+                        <h2 class="text-3xl font-bold text-white mb-2">BOOM!</h2>
+                        <p class="text-gray-300 mb-6">
+                            <span class="text-red-400 font-bold text-xl">${data.loser === userId ? 'คุณ' : data.loserName}</span> เหยียบกับดัก!
+                        </p>
+                        <div class="bg-red-900/30 border border-red-500/50 p-4 rounded-xl mb-6">
+                            <p class="text-xs text-red-300 uppercase tracking-wider mb-1">คำต้องห้ามคือ</p>
+                            <p class="text-2xl font-bold text-white">${data.bombWord}</p>
+                        </div>
+                        <button onclick="resetGame()" class="bg-white text-red-600 px-8 py-3 rounded-full font-bold hover:bg-gray-200 shadow-lg transition transform hover:scale-105">
+                            เล่นต่อรอบหน้า
+                        </button>
+                    </div>
+                `;
+                inputArea.classList.add('opacity-50', 'pointer-events-none');
+            }
+        };
+
+        window.onload = init;
+    </script>
+</head>
+<body class="text-gray-200 h-screen overflow-hidden flex flex-col">
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 z-[60] bg-[#0f172a] flex flex-col items-center justify-center transition-opacity duration-500">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mb-4 shadow-lg shadow-blue-500/50"></div>
+        <p class="text-blue-300 font-light tracking-widest">LOADING...</p>
+    </div>
+
+    <!-- Name Entry Screen -->
+    <div id="name-screen" class="fixed inset-0 z-50 bg-[#0f172a] flex flex-col items-center justify-center p-6 transition-transform duration-500 hidden">
+        <div class="w-full max-w-md text-center">
+            <div class="mb-8 relative inline-block">
+                <i class="fas fa-bomb text-7xl text-red-500 animate-bounce drop-shadow-lg shadow-red-500"></i>
+                <div class="absolute -bottom-2 left-1/2 -translate-x-1/2 w-12 h-2 bg-black/50 blur-md rounded-full"></div>
+            </div>
+            <h1 class="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-2">CHAT BOMB</h1>
+            <p class="text-gray-400 mb-8 font-light">เกมแชทวัดใจ ใครพิมพ์ผิด...ระเบิด!</p>
+            
+            <div class="glass p-8 rounded-3xl shadow-2xl">
+                <label class="block text-left text-sm text-gray-400 mb-2 ml-1">ชื่อเล่นของคุณ</label>
+                <input id="player-name-input" type="text" placeholder="เช่น น้องแมว, พี่หมี" 
+                       class="w-full bg-slate-800/50 text-white text-center text-xl rounded-xl px-4 py-4 mb-6 border border-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all placeholder-gray-600">
+                <button id="btn-enter-game" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/30 transition-all transform hover:scale-[1.02]">
+                    เริ่มเล่นเกม <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOBBY SCREEN -->
+    <div id="lobby-screen" class="hidden w-full max-w-md mx-auto h-full flex flex-col p-4 animate-fade-in-up">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6 pt-2">
+            <div>
+                <h2 class="text-2xl font-bold text-white">Lobby</h2>
+                <p class="text-xs text-gray-400">สวัสดี, <span id="player-display-name" class="text-blue-400 font-bold">User</span></p>
+            </div>
+            <div class="bg-slate-800 p-2 rounded-full border border-slate-700 shadow-sm">
+                <i class="fas fa-bomb text-red-500 text-xl animate-pulse"></i>
+            </div>
+        </div>
+
+        <!-- Main Action -->
+        <div class="glass p-6 rounded-3xl shadow-xl mb-6 border border-slate-700/50 relative overflow-hidden">
+            <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500/20 rounded-full blur-xl"></div>
+            <button id="btn-create-room" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white py-4 rounded-2xl font-bold text-lg mb-4 shadow-lg transition-all transform hover:scale-[1.02] flex items-center justify-center gap-3 z-10 relative">
+                <i class="fas fa-plus-circle"></i> สร้างห้องใหม่
+            </button>
+            
+            <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                    <i class="fas fa-hashtag absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                    <input id="input-room-code" type="text" placeholder="ใส่รหัสห้อง 6 หลัก" 
+                           class="w-full bg-slate-900/50 text-white pl-10 pr-4 py-3 rounded-xl border border-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 font-mono tracking-wider">
+                </div>
+                <button id="btn-join-room" class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-3 rounded-xl font-bold transition shadow-md">
+                    <i class="fas fa-sign-in-alt"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Room List -->
+        <div class="flex-1 overflow-hidden flex flex-col">
+            <h3 class="text-sm text-gray-400 uppercase tracking-wide mb-3 ml-1">ห้องที่กำลังเล่น</h3>
+            <div id="room-list" class="flex-1 overflow-y-auto pr-2 space-y-2 pb-4">
+                <!-- Room items will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="hidden flex flex-col w-full h-full max-w-2xl mx-auto relative bg-[#0f172a] md:border-x md:border-slate-800">
+        
+        <!-- Header -->
+        <header class="glass w-full p-3 flex items-center justify-between gap-2 z-30 shadow-sm backdrop-blur-md">
+            <button id="btn-leave-room" class="text-gray-300 hover:text-white transition w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-700 flex-shrink-0" title="ออกจากห้อง">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            
+            <div class="flex-1 flex items-center justify-center">
+                <div class="flex items-center gap-2 bg-slate-800/90 px-3 py-1.5 rounded-full border border-slate-700 shadow-inner cursor-pointer hover:border-blue-400/50 transition group" id="btn-copy-code" title="แตะเพื่อคัดลอกรหัส">
+                    <span class="text-[9px] text-gray-400 font-bold tracking-widest">ROOM</span>
+                    <span id="display-room-code" class="font-mono font-bold text-blue-300 text-base group-hover:text-white">------</span>
+                    <i class="far fa-copy text-xs text-gray-500 group-hover:text-white"></i>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <button id="btn-close-room" class="hidden bg-red-500/10 text-red-200 text-[10px] sm:text-xs font-semibold tracking-wide px-2 py-1 rounded-full border border-red-400/30 flex items-center gap-1" title="ปิดห้อง">
+                    <i class="fas fa-door-closed"></i>
+                    <span class="hidden sm:inline">ปิด</span>
+                </button>
+                <div id="game-status" class="text-[10px] text-gray-300 whitespace-nowrap">...</div>
+            </div>
+        </header>
+
+        <!-- Score/Hint Banner -->
+        <div class="bg-slate-900/95 border-b border-slate-800 p-3 flex justify-between items-center px-4 sm:px-6 z-20 gap-3">-3">
+            <div class="flex gap-3 sm:gap-4 text-[11px] sm:text-xs font-mono flex-shrink-0">
+                <div class="text-green-400"><i class="fas fa-heart"></i> <span id="alive-count">0</span></div>
+                <div class="text-red-400"><i class="fas fa-skull"></i> <span id="dead-count">0</span></div>
+            </div>
+            <div id="hint-text" class="text-xs sm:text-sm text-center flex-1 font-medium">...</div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chat-box" class="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0f172a]">
+            <!-- Chat bubbles -->
+        </div>
+
+        <!-- Input / Controls Area -->
+        <div class="glass p-4 pb-6 border-t border-slate-700/50 z-20">
+            
+            <!-- Start Button (Visible only when IDLE) -->
+            <div id="game-controls" class="flex justify-center mb-2 hidden">
+                <button id="btn-start-round" class="w-full bg-gradient-to-r from-red-600 to-orange-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-red-600/20 animate-pulse hover:animate-none hover:scale-[1.02] transition flex items-center justify-center gap-2">
+                    <i class="fas fa-bomb"></i> วางระเบิด (เริ่มเกม)
+                </button>
+            </div>
+            
+            <!-- Edit Bomb Button (Visible only for setter during game) -->
+            <div id="edit-bomb-controls" class="flex justify-center mb-2 hidden">
+                <button id="btn-edit-bomb" class="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-2 rounded-xl font-semibold shadow-md hover:scale-[1.02] transition flex items-center justify-center gap-2 text-sm">
+                    <i class="fas fa-edit"></i> แก้ไขคำระเบิด
+                </button>
+            </div>
+
+            <!-- Chat Input -->
+            <div id="input-area" class="flex gap-3 transition-opacity duration-300">
+                <input id="chat-input" type="text" placeholder="พิมพ์ข้อความ..." 
+                       class="flex-1 bg-slate-800 text-white rounded-2xl px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-slate-700 placeholder-gray-500 shadow-inner">
+                <button id="btn-send-chat" class="bg-blue-600 hover:bg-blue-500 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center transition-transform active:scale-95">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Game Over Overlay -->
+        <div id="winner-display" class="hidden absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in-up">
+            <!-- Injected by JS -->
+        </div>
+    </div>
+
+    <!-- Setup Modal -->
+    <div id="setup-modal" class="hidden fixed inset-0 z-[70] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in-up">
+        <div class="glass-heavy w-full max-w-sm rounded-3xl p-6 border border-slate-600 shadow-2xl relative">
+            <button onclick="document.getElementById('setup-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-500 hover:text-white"><i class="fas fa-times"></i></button>
+            
+            <div class="text-center mb-6">
+                <div class="bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 border border-slate-600">
+                    <i class="fas fa-user-secret text-3xl text-yellow-400"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white">วางกับดักระเบิด</h2>
+                <p class="text-xs text-gray-400">เลือกคำที่คิดว่าเพื่อนจะเผลอพิมพ์</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-red-400 uppercase mb-1 ml-1">คำต้องห้าม (Bomb Word)</label>
+                    <input id="input-bomb-word" type="text" placeholder="เช่น แมว, สวัสดี" 
+                           class="w-full bg-slate-900 text-white rounded-xl px-4 py-3 border border-slate-700 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 transition-colors">
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-blue-400 uppercase mb-1 ml-1">คำใบ้ (Hint)</label>
+                    <input id="input-hint" type="text" placeholder="เช่น สัตว์เลี้ยง" 
+                           class="w-full bg-slate-900 text-white rounded-xl px-4 py-3 border border-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors">
+                </div>
+            </div>
+            
+            <button id="btn-confirm-word" class="w-full mt-8 bg-gradient-to-r from-red-600 to-orange-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-600/20 hover:scale-[1.02] transition-transform">
+                วางระเบิดเลย! 💣
+            </button>
+        </div>
+    </div>
+
+</body>
+</html>
