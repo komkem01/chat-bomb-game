@@ -53,7 +53,6 @@ const GameScreen: React.FC<GameScreenProps> = ({
   onResetGame,
 }) => {
   const isOwner = roomData.room.owner_id === userId;
-  const isSetter = roomData.room.setter_id === userId;
   const aliveCount =
     roomData.players?.filter((p) => !p.is_eliminated).length || 0;
   const deadCount =
@@ -62,8 +61,51 @@ const GameScreen: React.FC<GameScreenProps> = ({
     (p) => p.player_id === userId && p.is_eliminated
   );
   const podiumEntries = roomData.podium || [];
+  const hasStartedGame = !!roomData.room.setter_id;
   const showPodium =
-    roomData.room.status === "CLOSED" && podiumEntries.length > 0;
+    roomData.room.status === "CLOSED" &&
+    hasStartedGame &&
+    podiumEntries.length > 0;
+  const totalPlayers = roomData.players?.length || 0;
+  const dangerPercentage =
+    totalPlayers > 0 ? Math.round((deadCount / totalPlayers) * 100) : 0;
+
+  const dangerMeta = (() => {
+    if (dangerPercentage >= 66) {
+      return {
+        label: "ระวัง! อันตรายสูง",
+        accent: "text-red-300",
+        bar: "from-red-500 via-orange-500 to-amber-400",
+        badge: "bg-red-500/20 border-red-500/40 text-red-100",
+        icon: "fa-explosion",
+        description: "เหลือผู้รอดชีวิตไม่มากแล้ว ทุกคำมีความเสี่ยงสูง!",
+      };
+    }
+    if (dangerPercentage >= 33) {
+      return {
+        label: "เริ่มร้อนระอุ",
+        accent: "text-amber-300",
+        bar: "from-amber-500 via-orange-400 to-yellow-400",
+        badge: "bg-amber-500/20 border-amber-500/40 text-amber-100",
+        icon: "fa-fire-flame-curved",
+        description: "มีคนถูกคัดออกไปแล้วหลายคน ระวังคำต้องห้ามให้ดี",
+      };
+    }
+    return {
+      label: "ยังชิลอยู่",
+      accent: "text-emerald-300",
+      bar: "from-emerald-500 via-emerald-400 to-cyan-400",
+      badge: "bg-emerald-500/20 border-emerald-500/40 text-emerald-100",
+      icon: "fa-shield-halved",
+      description: "ยังเหลือผู้เล่นอีกเยอะ ลองหลอกเพื่อน ๆ ด้วยคำสร้างสรรค์!",
+    };
+  })();
+
+  const recentEliminations = (
+    roomData.messages?.filter((msg) => msg.is_boom) || []
+  )
+    .slice(-3)
+    .reverse();
 
   const renderMessages = () => {
     if (!roomData.messages) return null;
@@ -191,22 +233,25 @@ const GameScreen: React.FC<GameScreenProps> = ({
         <div className="flex items-center gap-2 sm:gap-4">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
             {roomData.room.status === "IDLE" ? (
-              <span className="flex items-center gap-2 text-slate-400 text-xs sm:text-sm">
-                <i className="far fa-clock animate-pulse"></i>
-                <span className="hidden sm:inline">รอตั้งค่าเกม</span>
-              </span>
-            ) : roomData.room.status === "PLAYING" ? (
-              isEliminated ? (
-                <span className="text-red-400 font-semibold flex items-center gap-2 text-xs sm:text-sm">
-                  <i className="fas fa-skull"></i>
-                  <span className="hidden sm:inline">ELIMINATED</span>
-                </span>
+              isOwner ? (
+                <button
+                  onClick={onOpenSetupModal}
+                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600/40 to-cyan-500/40 text-blue-200 hover:text-white border border-blue-500/40 hover:border-blue-400/60 text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all"
+                >
+                  <i className="fas fa-crosshairs"></i>
+                  <span>ตั้งค่าคำกับดัก</span>
+                </button>
               ) : (
-                <span className="flex items-center gap-2 text-emerald-400 text-xs sm:text-sm font-semibold animate-pulse-soft">
-                  <i className="fas fa-circle text-[6px]"></i>
-                  <span className="hidden sm:inline">กำลังเล่น</span>
+                <span className="flex items-center gap-2 text-slate-400 text-xs sm:text-sm">
+                  <i className="fas fa-user-clock text-slate-500"></i>
+                  <span>รอเจ้าของห้องตั้งค่าคำกับดัก</span>
                 </span>
               )
+            ) : roomData.room.status === "PLAYING" ? (
+              <span className="flex items-center gap-2 text-emerald-300 text-xs sm:text-sm font-semibold">
+                <i className="fas fa-bolt"></i>
+                <span className="hidden sm:inline">กำลังเล่น</span>
+              </span>
             ) : roomData.room.status === "CLOSED" ? (
               <span className="flex items-center gap-2 text-yellow-300 text-xs sm:text-sm font-semibold">
                 <i className="fas fa-flag-checkered"></i>
@@ -228,7 +273,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
 
       {/* Status Bar with modern indicators */}
       <div className="bg-gradient-to-r from-slate-900/95 via-slate-800/95 to-slate-900/95 border-b border-blue-500/20 px-4 sm:px-6 py-3.5 flex justify-between items-center backdrop-blur-xl z-10 shadow-xl">
-        <div className="flex gap-3 sm:gap-6 text-xs sm:text-sm font-bold">
+  <div className="flex gap-3 sm:gap-6 text-xs sm:text-sm font-bold items-center flex-1">
           {/* Survivors badge */}
           <div
             className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/40 shadow-lg shadow-emerald-500/10 transition-all hover:scale-105"
@@ -300,7 +345,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           </div>
 
           {/* Edit button for setter */}
-          {isSetter && roomData.room.status === "PLAYING" && (
+          {isOwner && roomData.room.status === "PLAYING" && (
             <button
               onClick={onOpenSetupModal}
               className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 text-blue-400 border border-blue-400/40 hover:border-blue-400/60 transition-all duration-300 text-xs group shadow-lg hover:shadow-xl"
@@ -309,6 +354,28 @@ const GameScreen: React.FC<GameScreenProps> = ({
               <i className="fas fa-pen group-hover:rotate-12 transition-transform"></i>
             </button>
           )}
+        </div>
+
+        {/* Danger meter */}
+        <div className="hidden lg:flex flex-col gap-2 text-xs sm:text-sm font-semibold text-right">
+          <div className="flex items-center gap-2 justify-end">
+            <span className={`px-3 py-1 rounded-full border ${dangerMeta.badge}`}>
+              <i className={`fas ${dangerMeta.icon} mr-1`}></i>
+              โหมด: {dangerMeta.label}
+            </span>
+            <span className="text-slate-400 text-xs font-medium">
+              Eliminated {deadCount}/{totalPlayers}
+            </span>
+          </div>
+          <div className="w-64 h-3 rounded-full bg-slate-800/60 border border-slate-700/60 overflow-hidden">
+            <div
+              className={`h-full bg-gradient-to-r ${dangerMeta.bar} transition-all duration-500`}
+              style={{ width: `${dangerPercentage}%` }}
+            ></div>
+          </div>
+          <p className="text-slate-400 text-[11px] font-normal">
+            {dangerMeta.description}
+          </p>
         </div>
       </div>
 
@@ -326,6 +393,26 @@ const GameScreen: React.FC<GameScreenProps> = ({
             style={{ animationDelay: "1s" }}
           ></div>
         </div>
+
+        {/* Elimination highlights */}
+        {roomData.room.status === "PLAYING" && recentEliminations.length > 0 && (
+          <div className="relative z-10 mb-4">
+            <div className="rounded-2xl border border-red-500/30 bg-red-950/40 p-4 shadow-lg backdrop-blur-sm">
+              <div className="flex items-center gap-2 text-red-200 text-sm font-semibold mb-2">
+                <i className="fas fa-skull-crossbones animate-pulse"></i>
+                <span>โดนคัดออกล่าสุด</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {recentEliminations.map((msg) => (
+                  <div key={msg.id} className="flex items-center justify-between text-xs sm:text-sm text-red-200">
+                    <span className="font-bold">{msg.sender_name}</span>
+                    <span className="text-red-300/70">{msg.message_text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <div className="relative z-10">{renderMessages()}</div>
@@ -350,16 +437,22 @@ const GameScreen: React.FC<GameScreenProps> = ({
       <div className="surface-card p-4 sm:p-6 border-t border-blue-500/20 z-20 shadow-2xl backdrop-blur-2xl bg-gradient-to-b from-slate-900/95 to-slate-800/95">
         {roomData.room.status === "IDLE" && (
           <div className="flex justify-center mb-4">
-            <button
-              onClick={onOpenSetupModal}
-              className="w-full btn-primary py-4 sm:py-5 rounded-2xl font-bold shadow-2xl text-base sm:text-lg flex items-center justify-center gap-3 group relative overflow-hidden
-                before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent
-                before:translate-x-[-200%] hover:before:translate-x-[200%] before:transition-transform before:duration-1000"
-            >
-              <i className="fas fa-crosshairs text-xl group-hover:rotate-90 transition-transform duration-500"></i>
-              <span>ตั้งค่าคำกับดัก</span>
-              <i className="fas fa-arrow-right text-sm group-hover:translate-x-1 transition-transform"></i>
-            </button>
+            {isOwner ? (
+              <button
+                onClick={onOpenSetupModal}
+                className="w-full btn-primary py-4 sm:py-5 rounded-2xl font-bold shadow-2xl text-base sm:text-lg flex items-center justify-center gap-3 group relative overflow-hidden
+                  before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent
+                  before:translate-x-[-200%] hover:before:translate-x-[200%] before:transition-transform before:duration-1000"
+              >
+                <i className="fas fa-crosshairs text-xl group-hover:rotate-90 transition-transform duration-500"></i>
+                <span>ตั้งค่าคำกับดัก</span>
+                <i className="fas fa-arrow-right text-sm group-hover:translate-x-1 transition-transform"></i>
+              </button>
+            ) : (
+              <div className="w-full px-4 py-4 rounded-2xl border border-slate-700/40 bg-slate-800/40 text-center text-slate-400 text-sm">
+                รอเจ้าของห้องตั้งค่าคำกับดักก่อนเริ่มเกม
+              </div>
+            )}
           </div>
         )}
 
@@ -625,7 +718,9 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 ))}
               </div>
             ) : (
-              <p className="text-slate-400">ยังไม่มีผู้ชนะ</p>
+              <p className="text-slate-400">
+                {hasStartedGame ? "ยังไม่มีผู้ชนะ" : "ยังไม่มีคะแนน"}
+              </p>
             )}
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
