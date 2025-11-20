@@ -9,11 +9,9 @@ import {
   updateRoomSettings,
   sendMessage,
   closeRoom,
-  subscribeToRoom,
   resetGame,
 } from '@/lib/supabase';
 import { GameState, GameScreen as GameScreenType, ToastType } from '@/types/game';
-import { RealtimeChannel } from '@supabase/supabase-js';
 import NameScreen from '@/components/screens/NameScreen';
 import LobbyScreen from '@/components/screens/LobbyScreen';
 import GameScreenComponent from '@/components/screens/GameScreen';
@@ -37,7 +35,7 @@ export default function ChatBombGame() {
     const [showSetupModal, setShowSetupModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-    const unsubscribeRoomListener = useRef<RealtimeChannel | null>(null);
+    const unsubscribeRoomListener = useRef<{ unsubscribe: () => void } | null>(null);
     const chatBoxRef = useRef<HTMLDivElement>(null);
     const roomFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -207,28 +205,16 @@ export default function ChatBombGame() {
 
       fetchSnapshot(true); // Initial load with retry
 
-      const channel = subscribeToRoom(roomId, () => {
-        if (roomFetchTimeoutRef.current) return;
-        roomFetchTimeoutRef.current = setTimeout(() => {
-          roomFetchTimeoutRef.current = null;
-          fetchSnapshot(false); // Realtime updates without retry
-        }, FETCH_DEBOUNCE_MS);
-      });
-
-      if (channel) {
-        unsubscribeRoomListener.current = channel;
-      } else {
-        // Polling fallback if realtime unavailable
-        console.warn('⚠️ Using polling fallback (every 3s)');
-        const pollInterval = setInterval(() => {
-          fetchSnapshot(false);
-        }, 3000);
-        
-        // Store cleanup in a pseudo-channel object
-        unsubscribeRoomListener.current = {
-          unsubscribe: () => clearInterval(pollInterval),
-        } as any;
-      }
+      // Always use polling - skip realtime entirely
+      console.warn('⚠️ Using polling fallback (every 3s)');
+      const pollInterval = setInterval(() => {
+        fetchSnapshot(false);
+      }, 3000);
+      
+      // Store cleanup in a pseudo-channel object
+      unsubscribeRoomListener.current = {
+        unsubscribe: () => clearInterval(pollInterval),
+      } as any;
     };
 
     const openSetupModal = () => {
