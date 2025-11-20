@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Script from 'next/script'
 import { Kanit } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 
 const kanit = Kanit({
   weight: ['300', '400', '500', '600', '700'],
@@ -33,6 +34,7 @@ export default function RootLayout({
       <body className={`${kanit.className} min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white`}>
         <Script src="/cssCheck.js" strategy="beforeInteractive" />
         {children}
+        <Analytics />
       </body>
     </html>
   )

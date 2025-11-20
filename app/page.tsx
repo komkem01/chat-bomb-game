@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   initializeSupabase,
   createRoom,
@@ -32,15 +32,17 @@ export default function ChatBombGame() {
     const [chatInput, setChatInput] = useState('');
     const [bombWordInput, setBombWordInput] = useState('');
     const [hintInput, setHintInput] = useState('');
-    const [showSetupModal, setShowSetupModal] = useState(false);
-    const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [autoReturnCountdown, setAutoReturnCountdown] = useState<number | null>(null);
 
   const unsubscribeRoomListener = useRef<{ unsubscribe: () => void } | null>(null);
   const chatBoxRef = useRef<HTMLDivElement>(null);
   const roomFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const autoReturnIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasShownCloseToastRef = useRef(false);
 
-    const showToast = (message: string, type: ToastType = 'info') => {
+    const showToast = useCallback((message: string, type: ToastType = 'info') => {
       const toastContainer = document.getElementById('toast-container');
       if (!toastContainer) return;
 
@@ -69,7 +71,7 @@ export default function ChatBombGame() {
         toast.classList.add('opacity-0', 'translate-x-full', 'scale-95');
         setTimeout(() => toast.remove(), 500);
       }, 3500);
-    };
+    }, []);
 
     useEffect(() => {
       const init = async () => {
@@ -89,7 +91,7 @@ export default function ChatBombGame() {
       };
 
       init();
-    }, []);
+    }, [showToast]);
 
     useEffect(() => {
       if (chatBoxRef.current) {
@@ -105,12 +107,15 @@ export default function ChatBombGame() {
         if (unsubscribeRoomListener.current) {
           unsubscribeRoomListener.current.unsubscribe();
         }
+        if (autoReturnIntervalRef.current) {
+          clearInterval(autoReturnIntervalRef.current);
+        }
       };
     }, []);
 
-    const switchScreen = (screen: GameScreenType) => {
+    const switchScreen = useCallback((screen: GameScreenType) => {
       setGameState((prev) => ({ ...prev, currentScreen: screen }));
-    };
+    }, []);
 
     const enterWithName = () => {
       const name = playerNameInput.trim();
@@ -144,7 +149,7 @@ export default function ChatBombGame() {
       listenToRoom(roomId);
     };
 
-    const leaveRoom = () => {
+    const leaveRoom = useCallback(() => {
       if (unsubscribeRoomListener.current) {
         unsubscribeRoomListener.current.unsubscribe();
         unsubscribeRoomListener.current = null;
@@ -153,6 +158,11 @@ export default function ChatBombGame() {
         clearTimeout(roomFetchTimeoutRef.current);
         roomFetchTimeoutRef.current = null;
       }
+      if (autoReturnIntervalRef.current) {
+        clearInterval(autoReturnIntervalRef.current);
+        autoReturnIntervalRef.current = null;
+      }
+      setAutoReturnCountdown(null);
       hasShownCloseToastRef.current = false;
       setGameState((prev) => ({
         ...prev,
@@ -162,7 +172,7 @@ export default function ChatBombGame() {
       switchScreen('lobby');
       setChatInput('');
       setRoomCodeInput('');
-    };
+    }, [switchScreen]);
 
     const listenToRoom = (roomId: string) => {
       if (unsubscribeRoomListener.current) {
@@ -222,6 +232,65 @@ export default function ChatBombGame() {
         unsubscribe: () => clearInterval(pollInterval),
       } as any;
     };
+
+    useEffect(() => {
+      const room = gameState.currentRoomData?.room;
+      const userId = gameState.userId;
+
+      if (!room || !userId) {
+        if (autoReturnCountdown !== null) {
+          setAutoReturnCountdown(null);
+        }
+        return;
+      }
+
+      const isOwner = room.owner_id === userId;
+      if (room.status === 'CLOSED' && !isOwner) {
+        if (autoReturnCountdown === null) {
+          setAutoReturnCountdown(20);
+        }
+      } else if (autoReturnCountdown !== null) {
+        setAutoReturnCountdown(null);
+      }
+    }, [gameState.currentRoomData, gameState.userId, autoReturnCountdown]);
+
+    useEffect(() => {
+      if (autoReturnCountdown === null) {
+        if (autoReturnIntervalRef.current) {
+          clearInterval(autoReturnIntervalRef.current);
+          autoReturnIntervalRef.current = null;
+        }
+        return;
+      }
+
+      if (autoReturnIntervalRef.current) {
+        clearInterval(autoReturnIntervalRef.current);
+        autoReturnIntervalRef.current = null;
+      }
+
+      autoReturnIntervalRef.current = setInterval(() => {
+        setAutoReturnCountdown((prev) => {
+          if (prev === null) return null;
+          if (prev <= 1) {
+            if (autoReturnIntervalRef.current) {
+              clearInterval(autoReturnIntervalRef.current);
+              autoReturnIntervalRef.current = null;
+            }
+            showToast('กลับสู่ Lobby โดยอัตโนมัติ', 'info');
+            leaveRoom();
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        if (autoReturnIntervalRef.current) {
+          clearInterval(autoReturnIntervalRef.current);
+          autoReturnIntervalRef.current = null;
+        }
+      };
+    }, [autoReturnCountdown, leaveRoom, showToast]);
 
     const openSetupModal = () => {
       if (gameState.currentRoomData?.room.bomb_word) {
@@ -413,6 +482,7 @@ export default function ChatBombGame() {
               onConfirmCloseRoom={confirmCloseRoom}
               chatBoxRef={chatBoxRef}
               onResetGame={resetGameFunc}
+              autoReturnCountdown={autoReturnCountdown}
             />
           );
         default:

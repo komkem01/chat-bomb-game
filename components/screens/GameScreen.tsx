@@ -26,6 +26,7 @@ interface GameScreenProps {
   onConfirmCloseRoom: () => void;
   chatBoxRef: RefObject<HTMLDivElement>;
   onResetGame?: () => void;
+  autoReturnCountdown?: number | null;
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({
@@ -51,6 +52,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
   onConfirmCloseRoom,
   chatBoxRef,
   onResetGame,
+  autoReturnCountdown,
 }) => {
   const isOwner = roomData.room.owner_id === userId;
   const aliveCount =
@@ -674,6 +676,11 @@ const GameScreen: React.FC<GameScreenProps> = ({
               <p className="text-slate-400 text-sm">
                 ผู้ที่อยู่ได้นานที่สุด 3 คนได้รับคะแนนพิเศษ
               </p>
+              {!isOwner && autoReturnCountdown !== null && (
+                <div className="text-amber-300 text-sm font-semibold">
+                  ระบบจะพาคุณกลับ Lobby ใน {autoReturnCountdown} วินาที
+                </div>
+              )}
             </div>
 
             {showPodium ? (
