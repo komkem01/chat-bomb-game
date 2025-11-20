@@ -152,8 +152,12 @@
         };
         
         const getRoom = (roomId) => {
+           
+            
             if (roomCache.has(roomId)) return roomCache.get(roomId);
+
             const rooms = getAllRooms();
+      console.log(rooms);
             const room = rooms[roomId];
             if (room) roomCache.set(roomId, room);
             return room;
@@ -462,8 +466,11 @@
         const joinRoom = () => {
             const code = document.getElementById('input-room-code').value.trim();
             if (!code || code.length !== 6) return showToast('รหัสห้องต้องเป็นตัวเลข 6 หลัก', 'error');
+          console.log(getRoom(531680));
+          
             
-            const room = getRoom(code);
+          
+            const room = getRoom(278640);
             if (room) {
                 if (!room.players.find(p => p.id === userId)) {
                     room.players.push({ id: userId, name: playerName });
