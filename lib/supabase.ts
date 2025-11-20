@@ -2,9 +2,13 @@ import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabas
 import { Database } from '@/types/database';
 import { RoomData } from '@/types/game';
 
-// Supabase configuration
-const SUPABASE_URL = 'https://jqcsrmaaufbomdhdmcwn.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxY3NybWFhdWZib21kaGRtY3duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzE5OTM0NzIsImV4cCI6MjA0NzU2OTQ3Mn0.2TqhY4b1j0n8DxqU4xKEz6a1vQGLRa5f7p6t8v9x0yA'; // This should be the public anon key
+// Supabase configuration (injected at build time for browser use)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY ต้องถูกตั้งค่าใน Environment');
+}
 
 let supabase: SupabaseClient<Database>;
 let currentUserId: string | null = null;

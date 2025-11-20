@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 import { sendMessageService } from '@/lib/server/roomService';
-import { handleErrorResponse, jsonResponse } from '@/lib/server/httpHelpers';
+import { handleErrorResponse, handleOptions, jsonResponse } from '@/lib/server/httpHelpers';
 import { badRequest } from '@/lib/server/errors';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function POST(request: NextRequest) {
   try {

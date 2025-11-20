@@ -18,6 +18,8 @@ import NameScreen from '@/components/screens/NameScreen';
 import LobbyScreen from '@/components/screens/LobbyScreen';
 import GameScreenComponent from '@/components/screens/GameScreen';
 
+const FETCH_DEBOUNCE_MS = 120;
+
 export default function ChatBombGame() {
     const [gameState, setGameState] = useState<GameState>({
       userId: null,
@@ -37,6 +39,7 @@ export default function ChatBombGame() {
 
     const unsubscribeRoomListener = useRef<RealtimeChannel | null>(null);
     const chatBoxRef = useRef<HTMLDivElement>(null);
+    const roomFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const showToast = (message: string, type: ToastType = 'info') => {
       const toastContainer = document.getElementById('toast-container');
@@ -95,6 +98,17 @@ export default function ChatBombGame() {
       }
     }, [gameState.currentRoomData?.messages]);
 
+    useEffect(() => {
+      return () => {
+        if (roomFetchTimeoutRef.current) {
+          clearTimeout(roomFetchTimeoutRef.current);
+        }
+        if (unsubscribeRoomListener.current) {
+          unsubscribeRoomListener.current.unsubscribe();
+        }
+      };
+    }, []);
+
     const switchScreen = (screen: GameScreenType) => {
       setGameState((prev) => ({ ...prev, currentScreen: screen }));
     };
@@ -136,6 +150,10 @@ export default function ChatBombGame() {
         unsubscribeRoomListener.current.unsubscribe();
         unsubscribeRoomListener.current = null;
       }
+      if (roomFetchTimeoutRef.current) {
+        clearTimeout(roomFetchTimeoutRef.current);
+        roomFetchTimeoutRef.current = null;
+      }
       setGameState((prev) => ({
         ...prev,
         currentRoomId: null,
@@ -147,7 +165,16 @@ export default function ChatBombGame() {
     };
 
     const listenToRoom = (roomId: string) => {
-      const fetchRoomData = async () => {
+      if (unsubscribeRoomListener.current) {
+        unsubscribeRoomListener.current.unsubscribe();
+        unsubscribeRoomListener.current = null;
+      }
+      if (roomFetchTimeoutRef.current) {
+        clearTimeout(roomFetchTimeoutRef.current);
+        roomFetchTimeoutRef.current = null;
+      }
+
+      const fetchSnapshot = async () => {
         try {
           const data = await getRoomData(roomId);
           if (data.room.status === 'CLOSED') {
@@ -163,10 +190,14 @@ export default function ChatBombGame() {
         }
       };
 
-      fetchRoomData();
+      fetchSnapshot();
 
       unsubscribeRoomListener.current = subscribeToRoom(roomId, () => {
-        fetchRoomData();
+        if (roomFetchTimeoutRef.current) return;
+        roomFetchTimeoutRef.current = setTimeout(() => {
+          roomFetchTimeoutRef.current = null;
+          fetchSnapshot();
+        }, FETCH_DEBOUNCE_MS);
       });
     };
 
@@ -238,7 +269,8 @@ export default function ChatBombGame() {
       }
 
       try {
-        await sendMessage(gameState.currentRoomId, gameState.userId, gameState.playerName, text);
+        const updatedRoom = await sendMessage(gameState.currentRoomId, gameState.userId, gameState.playerName, text);
+        setGameState((prev) => ({ ...prev, currentRoomData: updatedRoom }));
         setChatInput('');
       } catch (error) {
         console.error('Error sending message:', error);
@@ -268,7 +300,8 @@ export default function ChatBombGame() {
     const resetGameFunc = async () => {
       if (!gameState.currentRoomId || !gameState.userId) return;
       try {
-        await resetGame(gameState.currentRoomId, gameState.userId);
+        const roomData = await resetGame(gameState.currentRoomId, gameState.userId);
+        setGameState((prev) => ({ ...prev, currentRoomData: roomData }));
         showToast('รีเซ็ตเกมแล้ว', 'success');
       } catch (error) {
         console.error('Error resetting game:', error);

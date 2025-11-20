@@ -3,6 +3,7 @@ import { HttpError, badRequest, forbidden, notFound } from './errors';
 import { DbMessage, DbPlayer, DbRoom, RoomData } from '@/types/game';
 
 const MAX_ROOM_CODE_ATTEMPTS = 7;
+const MAX_MESSAGE_HISTORY = 200;
 
 const normalize = (text: string) => text.trim().toLowerCase();
 
@@ -84,10 +85,16 @@ export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
       [roomId]
     ),
     query<DbMessage>(
-      `SELECT * FROM messages
-       WHERE room_id = $1
-       ORDER BY created_at ASC`,
-      [roomId]
+      `SELECT *
+         FROM (
+           SELECT *
+             FROM messages
+            WHERE room_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+         ) recent_messages
+        ORDER BY created_at ASC`,
+      [roomId, MAX_MESSAGE_HISTORY]
     ),
   ]);
 
@@ -161,15 +168,15 @@ export const sendMessageService = async (
 
   const normalizedText = normalize(text);
   const isBoom = !!room.bomb_word && normalizedText.includes(room.bomb_word);
-  // Eliminate the sender if they repeat another player's exact message
+  
+  // Eliminate the sender if they repeat another player's exact message (case-insensitive)
   const duplicateResult = await query<{ sender_id: string }>(
     `SELECT sender_id
        FROM messages
       WHERE room_id = $1
-        AND sender_id <> $2
-        AND LOWER(TRIM(message_text)) = $3
+        AND LOWER(TRIM(message_text)) = $2
       LIMIT 1`,
-    [roomId, senderId, normalizedText]
+    [roomId, normalizedText]
   );
   const isDuplicate = duplicateResult.rows.length > 0;
   const shouldEliminate = isBoom || isDuplicate;

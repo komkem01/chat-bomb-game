@@ -1,12 +1,16 @@
 import { NextRequest } from 'next/server';
 import { closeRoomService } from '@/lib/server/roomService';
-import { handleErrorResponse, jsonResponse } from '@/lib/server/httpHelpers';
+import { handleErrorResponse, handleOptions, jsonResponse } from '@/lib/server/httpHelpers';
 import { badRequest } from '@/lib/server/errors';
 
 interface Params {
   params: {
     roomId: string;
   };
+}
+
+export async function OPTIONS() {
+  return handleOptions();
 }
 
 export async function POST(request: NextRequest, context: Params) {
