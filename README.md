@@ -42,6 +42,7 @@ npm install
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 DATABASE_URL=postgresql://<user>:<password>@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres
+CRON_SECRET=vGwamd156Ps0w0LAHyOAlVFL5UM3Poyz
 ```
 
 `DATABASE_URL` is consumed only by the server-side API routes, while the `NEXT_PUBLIC_*` values are used for realtime subscriptions.
@@ -76,6 +77,7 @@ The game uses 3 main tables:
 - Eliminated players can still watch but can't chat
 - Room owner can close the game anytime
 - Games can be reset for multiple rounds
+- Each round runs on a 10-minute timer. If time expires with zero eliminations, the server auto-closes the round and announces “ทุกคนเก่งมากที่ยังอยู่รอด”.
 
 ## Deployment
 
@@ -96,6 +98,8 @@ All mutations hit serverless endpoints (so secrets never reach the browser):
 | POST | `/api/messages` | Send a chat message (server evaluates boom condition) |
 | POST | `/api/rooms/[roomId]/close` | Close the room (host only) |
 | POST | `/api/rooms/[roomId]/reset` | Reset the room back to `IDLE` |
+| POST | `/api/rooms/cleanup` | Delete `CLOSED` rooms and cascade messages older than the retention window |
+| GET | `/api/cron` | Vercel Cron hook that calls the cleanup service (accepts optional `?days=` override) |
 
 ## Environment Variables
 
@@ -108,6 +112,68 @@ See step 3 above for the required variables. The runtime will fail to start if `
 - \`npm run start\`: Start production server
 - \`npm run lint\`: Run ESLint
 - \`npm run type-check\`: Run TypeScript checking
+
+## Automated Data Cleanup
+
+- Closed rooms become eligible for deletion once their `updated_at` is at least 24 hours old (default grace period of 1 day).
+- Schedule a recurring job (e.g., Vercel Cron) that hits the dedicated `GET /api/cron` endpoint to purge expired rooms and their cascading messages/players. This route proxies to the same cleanup service and accepts an optional `?days=` query string.
+- A default cron entry is already defined in `vercel.json`, running daily at 10:00 UTC:
+
+	```json
+	{
+		"crons": [
+			{
+				"path": "/api/cron",
+				"schedule": "0 10 * * *"
+			}
+		]
+	}
+	```
+
+- Protect the endpoint by setting `CRON_SECRET` and sending requests with `Authorization: Bearer <CRON_SECRET>` (or `x-cron-secret` header) — requests without the secret are rejected whenever the env var is present. When running locally without `CRON_SECRET`, the endpoint stays open for manual testing.
+- Manual invocations can still `POST` to `/api/rooms/cleanup` and override the retention window by sending a JSON body such as `{ "days": 3 }`, or `{ "days": 0 }` to delete every closed room immediately.
+
+### Edge Function ping example
+
+```ts
+// supabase/functions/chat-bomb-cleanup/index.ts
+const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? 'vGwamd156Ps0w0LAHyOAlVFL5UM3Poyz';
+
+Deno.serve(async (req) => {
+	const authHeader = req.headers.get('authorization');
+	if (authHeader !== `Bearer ${CRON_SECRET}`) {
+		return new Response('Unauthorized', { status: 401 });
+	}
+
+	const response = await fetch('https://<your-vercel-domain>/api/cron', {
+		headers: {
+			Authorization: `Bearer ${CRON_SECRET}`,
+		},
+	});
+
+	return new Response(await response.text(), { status: response.status });
+});
+```
+
+### Supabase cron (pg_net) example
+
+```sql
+select
+	cron.schedule(
+		'chat-bomb-cleanup',
+		'*/5 * * * *', -- every 5 minutes (tweak as needed)
+		$$
+		select
+			net.http_post(
+				url := 'https://<your-vercel-domain>/api/cron',
+				headers := jsonb_build_object(
+					'Authorization', 'Bearer vGwamd156Ps0w0LAHyOAlVFL5UM3Poyz'
+				),
+				body := '{}'::jsonb
+			);
+		$$
+	);
+```
 
 ## Contributing
 

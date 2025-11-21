@@ -11,6 +11,7 @@ export interface Database {
           hint: string | null;
           setter_id: string | null;
           setter_name: string | null;
+          round_started_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -23,6 +24,7 @@ export interface Database {
           hint?: string | null;
           setter_id?: string | null;
           setter_name?: string | null;
+          round_started_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -35,6 +37,7 @@ export interface Database {
           hint?: string | null;
           setter_id?: string | null;
           setter_name?: string | null;
+          round_started_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

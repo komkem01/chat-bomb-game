@@ -9,6 +9,7 @@ interface LobbyScreenProps {
   onCreateRoom: () => void;
   onJoinRoom: () => void;
   onResetProfile: () => void;
+  onStartSolo: () => void;
 }
 
 const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -18,6 +19,7 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onCreateRoom,
   onJoinRoom,
   onResetProfile,
+  onStartSolo,
 }) => {
   return (
     <div className="w-full max-w-2xl mx-auto h-full flex flex-col p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -113,6 +115,29 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <span>เข้าห้อง</span>
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Solo Mode Card */}
+        <div className="surface-card p-6 sm:p-8 rounded-3xl relative overflow-hidden group shadow-xl hover:shadow-2xl transition-all">
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-600/10 via-indigo-600/10 to-blue-500/10 opacity-60 group-hover:opacity-90 transition-opacity"></div>
+          <div className="relative z-10 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg">
+                <i className="fas fa-robot text-xl text-white"></i>
+              </div>
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold text-white">เล่นคนเดียว</h3>
+                <p className="text-slate-300 text-xs sm:text-sm">ประลองกับบอทที่ตั้งคำกับดักให้เอง</p>
+              </div>
+            </div>
+            <button
+              onClick={onStartSolo}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-500 hover:to-cyan-500 text-white py-4 rounded-2xl font-semibold flex items-center justify-center gap-3 transition-all shadow-xl hover:shadow-2xl"
+            >
+              <i className="fas fa-bolt"></i>
+              <span>เริ่มโหมด Solo</span>
+            </button>
           </div>
         </div>
       </div>

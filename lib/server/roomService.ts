@@ -5,6 +5,7 @@ import { DbMessage, DbPlayer, DbRoom, RoomData, PodiumEntry } from '@/types/game
 const MAX_ROOM_CODE_ATTEMPTS = 7;
 const MAX_MESSAGE_HISTORY = 200;
 const PODIUM_POINTS = [5, 3, 1];
+const ROUND_DURATION_MS = 10 * 60 * 1000;
 
 const normalize = (text: string) => text.trim().toLowerCase();
 
@@ -87,7 +88,8 @@ export const joinRoomService = async (roomId: string, playerId: string, playerNa
 
 export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
   try {
-    const room = await getRoomByCode(roomId);
+    let room = await getRoomByCode(roomId);
+    room = await enforceRoundTimer(room);
 
     const [playersResult, messagesResult] = await Promise.all([
       query<DbPlayer>(
@@ -147,6 +149,7 @@ export const updateRoomSettingsService = async (
          setter_id = $4,
          setter_name = $5,
          status = 'PLAYING',
+         round_started_at = NOW(),
          updated_at = NOW()
      WHERE room_id = $1`,
     [roomId, normalize(bombWord), hint || null, setterId, setterName]
@@ -183,7 +186,7 @@ export const sendMessageService = async (
   }
 
   const normalizedText = normalize(text);
-  const isBoom = !!room.bomb_word && normalizedText.includes(room.bomb_word);
+  const isBoom = !!room.bomb_word && normalizedText === room.bomb_word;
   
   // Eliminate the sender if they repeat another player's exact message (case-insensitive)
   const duplicateResult = await query<{ sender_id: string }>(
@@ -219,7 +222,14 @@ export const closeRoomService = async (roomId: string, ownerId: string): Promise
     throw forbidden('เฉพาะเจ้าของห้องเท่านั้นที่ปิดห้องได้');
   }
 
-  await query(`UPDATE rooms SET status = 'CLOSED', updated_at = NOW() WHERE room_id = $1`, [roomId]);
+  await query(
+    `UPDATE rooms
+        SET status = 'CLOSED',
+            round_started_at = NULL,
+            updated_at = NOW()
+      WHERE room_id = $1`,
+    [roomId]
+  );
   return getRoomDataService(roomId);
 };
 
@@ -236,6 +246,7 @@ export const resetRoomService = async (roomId: string, ownerId: string): Promise
          hint = NULL,
          setter_id = NULL,
          setter_name = NULL,
+         round_started_at = NULL,
          updated_at = NOW()
      WHERE room_id = $1`,
     [roomId]
@@ -244,6 +255,85 @@ export const resetRoomService = async (roomId: string, ownerId: string): Promise
   await query(`UPDATE room_players SET is_eliminated = FALSE WHERE room_id = $1`, [roomId]);
 
   return getRoomDataService(roomId);
+};
+
+export const cleanupClosedRoomsService = async (gracePeriodDays = 1) => {
+  const numericDays = Number.isFinite(gracePeriodDays) ? Math.floor(Number(gracePeriodDays)) : NaN;
+
+  if (!Number.isFinite(numericDays) || numericDays < 0) {
+    throw badRequest('ระยะเวลาต้องเป็นจำนวนวันที่มากกว่าหรือเท่ากับ 0');
+  }
+
+  const result = await query<{ rooms_deleted: string | number }>(
+    `WITH deleted AS (
+       DELETE FROM rooms
+        WHERE status = 'CLOSED'
+          AND updated_at <= NOW() - ($1 * INTERVAL '1 day')
+        RETURNING room_id
+     )
+     SELECT COUNT(*)::int AS rooms_deleted FROM deleted`,
+    [numericDays]
+  );
+
+  const roomsDeleted = Number(result.rows[0]?.rooms_deleted ?? 0);
+
+  return {
+    roomsDeleted,
+    daysThreshold: numericDays,
+    deletedAt: new Date().toISOString(),
+  };
+};
+
+const enforceRoundTimer = async (room: DbRoom): Promise<DbRoom> => {
+  if (room.status !== 'PLAYING' || !room.round_started_at) {
+    return room;
+  }
+
+  const roundStartTime = new Date(room.round_started_at).getTime();
+  if (!Number.isFinite(roundStartTime)) {
+    return room;
+  }
+
+  const hasExpired = Date.now() >= roundStartTime + ROUND_DURATION_MS;
+  if (!hasExpired) {
+    return room;
+  }
+
+  const updatedRoomResult = await query<DbRoom>(
+    `UPDATE rooms
+        SET status = 'CLOSED',
+            round_started_at = NULL,
+            updated_at = NOW()
+      WHERE room_id = $1
+        AND status = 'PLAYING'
+      RETURNING *`,
+    [room.room_id]
+  );
+
+  const updatedRoom = updatedRoomResult.rows[0];
+  if (!updatedRoom) {
+    return room;
+  }
+
+  const eliminationCountResult = await query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count
+       FROM room_players
+      WHERE room_id = $1
+        AND is_eliminated = TRUE`,
+    [room.room_id]
+  );
+
+  const eliminationCount = eliminationCountResult.rows[0]?.count ?? 0;
+
+  if (eliminationCount === 0) {
+    await query(
+      `INSERT INTO messages (room_id, sender_id, sender_name, message_text, is_boom)
+       VALUES ($1, $2, $3, $4, FALSE)`,
+      [room.room_id, 'system_timer', 'ระบบจับเวลา', 'ทุกคนเก่งมากที่ยังอยู่รอด']
+    );
+  }
+
+  return updatedRoom;
 };
 
 const getRoomByCode = async (roomId: string): Promise<DbRoom> => {

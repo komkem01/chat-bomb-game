@@ -45,4 +45,5 @@ export interface GameState {
   currentRoomId: string | null;
   currentRoomData: RoomData | null;
   currentScreen: GameScreen;
+  sessionType: 'multiplayer' | 'solo';
 }

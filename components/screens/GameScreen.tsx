@@ -27,6 +27,8 @@ interface GameScreenProps {
   chatBoxRef: RefObject<HTMLDivElement>;
   onResetGame?: () => void;
   autoReturnCountdown?: number | null;
+  roundTimeLeft?: number | null;
+  isSoloMode?: boolean;
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({
@@ -53,6 +55,8 @@ const GameScreen: React.FC<GameScreenProps> = ({
   chatBoxRef,
   onResetGame,
   autoReturnCountdown,
+  roundTimeLeft,
+  isSoloMode = false,
 }) => {
   const isOwner = roomData.room.owner_id === userId;
   const aliveCount =
@@ -71,6 +75,19 @@ const GameScreen: React.FC<GameScreenProps> = ({
   const totalPlayers = roomData.players?.length || 0;
   const dangerPercentage =
     totalPlayers > 0 ? Math.round((deadCount / totalPlayers) * 100) : 0;
+  const allowOwnerControls = isOwner && !isSoloMode;
+  const isTimerActive =
+    roomData.room.status === "PLAYING" && typeof roundTimeLeft === "number";
+
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const secs = Math.max(0, seconds % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
 
   const dangerMeta = (() => {
     if (dangerPercentage >= 66) {
@@ -217,25 +234,31 @@ const GameScreen: React.FC<GameScreenProps> = ({
           <div className="h-8 w-px bg-gradient-to-b from-transparent via-blue-500/50 to-transparent hidden sm:block"></div>
           <div className="flex flex-col">
             <span className="text-[10px] sm:text-xs text-blue-400 uppercase tracking-wider font-bold flex items-center gap-1">
-              <i className="fas fa-key text-[8px]"></i>
-              Room ID
+              <i className={`fas ${isSoloMode ? 'fa-user-ninja' : 'fa-key'} text-[8px]`}></i>
+              {isSoloMode ? 'Solo Mode' : 'Room ID'}
             </span>
-            <div
-              className="flex items-center gap-2 cursor-pointer group"
-              onClick={onCopyRoomCode}
-            >
-              <span className="font-mono text-base sm:text-lg text-blue-400 font-bold group-hover:text-blue-300 transition-colors">
-                {roomId}
+            {isSoloMode ? (
+              <span className="font-mono text-base sm:text-lg text-purple-300 font-bold">
+                BOT-PRACTICE
               </span>
-              <i className="far fa-copy text-xs text-slate-500 group-hover:text-blue-400 transition-colors"></i>
-            </div>
+            ) : (
+              <div
+                className="flex items-center gap-2 cursor-pointer group"
+                onClick={onCopyRoomCode}
+              >
+                <span className="font-mono text-base sm:text-lg text-blue-400 font-bold group-hover:text-blue-300 transition-colors">
+                  {roomId}
+                </span>
+                <i className="far fa-copy text-xs text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
             {roomData.room.status === "IDLE" ? (
-              isOwner ? (
+              allowOwnerControls ? (
                 <button
                   onClick={onOpenSetupModal}
                   className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600/40 to-cyan-500/40 text-blue-200 hover:text-white border border-blue-500/40 hover:border-blue-400/60 text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all"
@@ -246,13 +269,13 @@ const GameScreen: React.FC<GameScreenProps> = ({
               ) : (
                 <span className="flex items-center gap-2 text-slate-400 text-xs sm:text-sm">
                   <i className="fas fa-user-clock text-slate-500"></i>
-                  <span>รอเจ้าของห้องตั้งค่าคำกับดัก</span>
+                  <span>{isSoloMode ? 'บอทกำลังเตรียมคำกับดักให้คุณ' : 'รอเจ้าของห้องตั้งค่าคำกับดัก'}</span>
                 </span>
               )
             ) : roomData.room.status === "PLAYING" ? (
               <span className="flex items-center gap-2 text-emerald-300 text-xs sm:text-sm font-semibold">
                 <i className="fas fa-bolt"></i>
-                <span className="hidden sm:inline">กำลังเล่น</span>
+                <span className="hidden sm:inline">{isSoloMode ? 'กำลังดวลกับบอท' : 'กำลังเล่น'}</span>
               </span>
             ) : roomData.room.status === "CLOSED" ? (
               <span className="flex items-center gap-2 text-yellow-300 text-xs sm:text-sm font-semibold">
@@ -261,7 +284,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
               </span>
             ) : null}
           </div>
-          {isOwner && (
+          {allowOwnerControls && (
             <button
               onClick={onOpenConfirmModal}
               className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-xs sm:text-sm font-semibold transition-all border border-red-500/30 hover:border-red-500/50 flex items-center gap-2"
@@ -274,7 +297,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
       </header>
 
       {/* Status Bar with modern indicators */}
-      <div className="bg-gradient-to-r from-slate-900/95 via-slate-800/95 to-slate-900/95 border-b border-blue-500/20 px-4 sm:px-6 py-3.5 flex justify-between items-center backdrop-blur-xl z-10 shadow-xl">
+    <div className="bg-gradient-to-r from-slate-900/95 via-slate-800/95 to-slate-900/95 border-b border-blue-500/20 px-4 sm:px-6 py-3.5 flex justify-between items-center gap-4 flex-wrap backdrop-blur-xl z-10 shadow-xl">
   <div className="flex gap-3 sm:gap-6 text-xs sm:text-sm font-bold items-center flex-1">
           {/* Survivors badge */}
           <div
@@ -347,7 +370,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           </div>
 
           {/* Edit button for setter */}
-          {isOwner && roomData.room.status === "PLAYING" && (
+          {allowOwnerControls && roomData.room.status === "PLAYING" && (
             <button
               onClick={onOpenSetupModal}
               className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 text-blue-400 border border-blue-400/40 hover:border-blue-400/60 transition-all duration-300 text-xs group shadow-lg hover:shadow-xl"
@@ -357,6 +380,27 @@ const GameScreen: React.FC<GameScreenProps> = ({
             </button>
           )}
         </div>
+
+        {isTimerActive && (
+          <div className="flex flex-col items-end gap-1 px-2 py-1 rounded-xl bg-slate-800/60 border border-slate-700/50 shadow-inner">
+            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold flex items-center gap-1">
+              <i className="fas fa-stopwatch text-blue-400"></i>
+              จับเวลา
+            </span>
+            <div
+              className={`text-lg sm:text-2xl font-black tabular-nums tracking-widest ${
+                roundTimeLeft! <= 60 ? "text-red-300" : "text-emerald-200"
+              }`}
+            >
+              {formatCountdown(roundTimeLeft!)}
+            </div>
+            {roundTimeLeft! <= 60 && (
+              <span className="text-[10px] text-red-300 font-semibold flex items-center gap-1">
+                <i className="fas fa-fire"></i> ใกล้หมดเวลาแล้ว!
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Danger meter */}
         <div className="hidden lg:flex flex-col gap-2 text-xs sm:text-sm font-semibold text-right">
@@ -439,7 +483,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
       <div className="surface-card p-4 sm:p-6 border-t border-blue-500/20 z-20 shadow-2xl backdrop-blur-2xl bg-gradient-to-b from-slate-900/95 to-slate-800/95">
         {roomData.room.status === "IDLE" && (
           <div className="flex justify-center mb-4">
-            {isOwner ? (
+            {allowOwnerControls ? (
               <button
                 onClick={onOpenSetupModal}
                 className="w-full btn-primary py-4 sm:py-5 rounded-2xl font-bold shadow-2xl text-base sm:text-lg flex items-center justify-center gap-3 group relative overflow-hidden
@@ -451,8 +495,15 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 <i className="fas fa-arrow-right text-sm group-hover:translate-x-1 transition-transform"></i>
               </button>
             ) : (
-              <div className="w-full px-4 py-4 rounded-2xl border border-slate-700/40 bg-slate-800/40 text-center text-slate-400 text-sm">
-                รอเจ้าของห้องตั้งค่าคำกับดักก่อนเริ่มเกม
+              <div className="w-full px-4 py-4 rounded-2xl border border-slate-700/40 bg-slate-800/40 text-center text-slate-200 text-sm">
+                {isSoloMode ? (
+                  <div className="space-y-1">
+                    <p className="font-semibold text-purple-200">Solo Bot กำลังเตรียมคำกับดักให้คุณ...</p>
+                    <p className="text-slate-400 text-xs">เริ่มพิมพ์ข้อความได้ทันทีเมื่อบอทพร้อม</p>
+                  </div>
+                ) : (
+                  'รอเจ้าของห้องตั้งค่าคำกับดักก่อนเริ่มเกม'
+                )}
               </div>
             )}
           </div>
@@ -529,10 +580,6 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 group overflow-hidden
                 border-2 border-blue-400/30 hover:border-blue-300/50"
             >
-              {/* Pulse effect when enabled */}
-              {chatInput.trim() && (
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
-              )}
               <i className="fas fa-paper-plane text-base sm:text-lg relative z-10 group-hover:rotate-12 transition-transform duration-300"></i>
             </button>
           </div>
@@ -737,7 +784,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
               >
                 กลับ Lobby
               </button>
-              {onResetGame && isOwner && (
+              {onResetGame && allowOwnerControls && (
                 <button
                   onClick={onResetGame}
                   className="px-5 py-3 rounded-2xl border border-slate-600 text-slate-200 hover:border-blue-400 hover:text-white transition-all"

@@ -152,11 +152,6 @@ export const subscribeToRoom = (
   roomId: string, 
   callback: (payload: any) => void
 ): RealtimeChannel | null => {
-  // Disable realtime entirely - always use polling fallback
-  console.warn('⚠️ Realtime disabled. Using polling fallback (every 3s)');
-  return null;
-
-  /* Original realtime code - commented out
   if (!supabase) {
     console.warn('⚠️ Supabase not initialized. Realtime disabled. Using polling fallback.');
     return null;
@@ -194,16 +189,19 @@ export const subscribeToRoom = (
           filter: `room_id=eq.${roomId}`,
         },
         callback
-      )
-      .subscribe();
+      );
 
-    console.log(`✅ Subscribed to room ${roomId}`);
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.info(`📡 Realtime sync active for room ${roomId}`);
+      }
+    });
+
     return channel;
   } catch (error) {
     console.error('❌ Failed to subscribe to room:', error);
     return null;
   }
-  */
 };
 
 export const resetGame = async (roomId: string, ownerId: string) => {

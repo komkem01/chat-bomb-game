@@ -20,6 +20,7 @@ CREATE TABLE rooms (
     hint TEXT,
     setter_id VARCHAR(255),
     setter_name VARCHAR(255),
+    round_started_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

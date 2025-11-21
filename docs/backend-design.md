@@ -46,6 +46,8 @@ All mutations now flow through Next.js API routes (Node.js serverless functions 
 | `/api/messages` | POST | Send a chat message; backend evaluates boom logic and eliminates players |
 | `/api/rooms/[roomId]/close` | POST | Host-only action to close a room |
 | `/api/rooms/[roomId]/reset` | POST | Host-only action to reset a room to `IDLE` without leaving |
+| `/api/rooms/cleanup` | POST | Cron-safe endpoint that deletes closed rooms (and cascaded messages/players) older than the retention window |
+| `/api/cron` | GET | Vercel Cron hook that proxies to the cleanup service (optional `days` query) |
 
 All endpoints return the canonical `RoomData` payload so the client can optimistically update if desired.
 
@@ -67,6 +69,20 @@ All endpoints return the canonical `RoomData` payload so the client can optimist
 - Database credentials live exclusively on the server (Vercel). Clients never touch the Postgres connection string or service-role key.
 - Supabase realtime is still used purely for subscriptions, so every mutation performed via the Node.js backend instantly streams back to listeners.
 - Player identity relies on a generated `userId` stored in memory/localStorage; tampering is possible but acceptable for casual gameplay.
+
+## Round Timer Logic
+
+- When the host sets the bomb word (`updateRoomSettings`), the backend records `round_started_at = NOW()`.
+- A round lasts exactly 10 minutes. Each `getRoomDataService` call checks whether the timer expired; once the deadline passes, the backend auto-closes the room (`status = 'CLOSED'`) and clears `round_started_at`.
+- If the round ends without any eliminations (`room_players.is_eliminated = TRUE`), the server inserts a system message announcing _“ทุกคนเก่งมากที่ยังอยู่รอด”_, giving players immediate feedback.
+- The frontend reads `round_started_at` to render a live countdown so everyone can see how much time remains.
+
+## Data Retention & Cleanup
+
+- `rooms`, `messages`, and `room_players` rows are purged via `/api/rooms/cleanup`, which deletes any `CLOSED` room whose `updated_at` is older than the configured threshold (default 1 day / 24 hours).
+- The deletion cascades to `room_players` and `messages` through `ON DELETE CASCADE`, ensuring no orphaned data remains.
+- Deployments should schedule a recurring job (e.g., Vercel Cron) that calls the public `GET /api/cron` hook with an `Authorization: Bearer <CRON_SECRET>` header; the repo ships with a default daily schedule in `vercel.json` (`0 10 * * *`). When `CRON_SECRET` is unset, the endpoint remains open for manual/local invocations.
+- Passing `{ "days": 0 }` in the request body forces immediate cleanup of all closed rooms; higher values retain short histories for post-game review.
 
 ## Future Backend Enhancements
 
