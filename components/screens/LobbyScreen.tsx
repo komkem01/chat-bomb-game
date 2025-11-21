@@ -2,6 +2,21 @@
 
 import React from 'react';
 
+interface SoloStats {
+  gamesPlayed: number;
+  gamesWon: number;
+  winRate: number;
+  bestScore: number;
+  totalScore: number;
+  averageScore: number;
+  bestTime: number;
+  totalTime: number;
+  averageTime: number;
+  longestCombo: number;
+  totalWordsFound: number;
+  achievements: string[];
+}
+
 interface LobbyScreenProps {
   playerName: string | null;
   roomCode: string;
@@ -10,6 +25,8 @@ interface LobbyScreenProps {
   onJoinRoom: () => void;
   onResetProfile: () => void;
   onStartSolo: () => void;
+  soloStats?: SoloStats;
+  onShowRules?: (gameMode: "solo" | "multiplayer") => void;
 }
 
 const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -20,6 +37,8 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onJoinRoom,
   onResetProfile,
   onStartSolo,
+  soloStats,
+  onShowRules,
 }) => {
   return (
     <div className="w-full max-w-2xl mx-auto h-full flex flex-col p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -41,12 +60,24 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             </div>
           </div>
-          <button
-            onClick={onResetProfile}
-            className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-800/50 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all flex items-center justify-center border border-slate-700/50 hover:border-red-500/50"
-          >
-            <i className="fas fa-sign-out-alt text-base sm:text-lg"></i>
-          </button>
+          <div className="flex gap-2">
+            {onShowRules && (
+              <button
+                onClick={() => onShowRules("multiplayer")}
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-800/50 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 transition-all flex items-center justify-center border border-slate-700/50 hover:border-blue-500/50"
+                title="กติกาการเล่น"
+              >
+                <i className="fas fa-book-open text-base sm:text-lg"></i>
+              </button>
+            )}
+            <button
+              onClick={onResetProfile}
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-800/50 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all flex items-center justify-center border border-slate-700/50 hover:border-red-500/50"
+              title="ออกจากระบบ"
+            >
+              <i className="fas fa-sign-out-alt text-base sm:text-lg"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -126,18 +157,53 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg">
                 <i className="fas fa-robot text-xl text-white"></i>
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-lg sm:text-xl font-bold text-white">เล่นคนเดียว</h3>
                 <p className="text-slate-300 text-xs sm:text-sm">ประลองกับบอทที่ตั้งคำกับดักให้เอง</p>
               </div>
+              {soloStats && soloStats.gamesPlayed > 0 && (
+                <div className="text-right">
+                  <div className="text-xs text-slate-400">Win Rate</div>
+                  <div className="text-lg font-bold text-purple-300">{soloStats.winRate.toFixed(1)}%</div>
+                </div>
+              )}
             </div>
-            <button
-              onClick={onStartSolo}
-              className="w-full bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-500 hover:to-cyan-500 text-white py-4 rounded-2xl font-semibold flex items-center justify-center gap-3 transition-all shadow-xl hover:shadow-2xl"
-            >
-              <i className="fas fa-bolt"></i>
-              <span>เริ่มโหมด Solo</span>
-            </button>
+            
+            {/* Solo Statistics */}
+            {soloStats && soloStats.gamesPlayed > 0 && (
+              <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-slate-800/30 border border-slate-700/30">
+                <div className="text-center">
+                  <div className="text-xs text-slate-400">เกมที่เล่น</div>
+                  <div className="text-sm font-bold text-white">{soloStats.gamesPlayed}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-400">คะแนนสูงสุด</div>
+                  <div className="text-sm font-bold text-yellow-400">{soloStats.bestScore.toLocaleString()}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-400">Combo สูงสุด</div>
+                  <div className="text-sm font-bold text-orange-400">{soloStats.longestCombo}x</div>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={onStartSolo}
+                className="flex-1 bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-500 hover:to-cyan-500 text-white py-4 rounded-2xl font-semibold flex items-center justify-center gap-3 transition-all shadow-xl hover:shadow-2xl"
+              >
+                <i className="fas fa-bolt"></i>
+                <span>เริ่มโหมด Solo</span>
+              </button>
+              {onShowRules && (
+                <button
+                  onClick={() => onShowRules("solo")}
+                  className="w-14 bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 hover:text-white py-4 rounded-2xl transition-all flex items-center justify-center border border-slate-600/50"
+                  title="กติกาโหมด Solo"
+                >
+                  <i className="fas fa-question-circle"></i>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

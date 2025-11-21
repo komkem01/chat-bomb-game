@@ -3,6 +3,23 @@
 import React, { RefObject } from 'react';
 import { RoomData, DbMessage } from '@/types/game';
 
+interface SoloStats {
+  score: number;
+  combo: number;
+  maxCombo: number;
+  difficultyLevel: string;
+  pressureLevel: number;
+  powerUps: {
+    hintReveal: number;
+    slowTime: number;
+    shield: number;
+    wordScanner: number;
+  };
+  shieldActive: boolean;
+  isSlowTime: boolean;
+  creativityBonus: number;
+}
+
 interface GameScreenProps {
   roomId: string;
   roomData: RoomData;
@@ -29,6 +46,7 @@ interface GameScreenProps {
   autoReturnCountdown?: number | null;
   roundTimeLeft?: number | null;
   isSoloMode?: boolean;
+  soloStats?: SoloStats;
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({
@@ -57,6 +75,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
   autoReturnCountdown,
   roundTimeLeft,
   isSoloMode = false,
+  soloStats,
 }) => {
   const isOwner = roomData.room.owner_id === userId;
   const aliveCount =
@@ -425,6 +444,75 @@ const GameScreen: React.FC<GameScreenProps> = ({
         </div>
       </div>
 
+      {/* Solo Mode Stats */}
+      {isSoloMode && soloStats && (
+        <div className="bg-gradient-to-r from-purple-900/30 via-blue-900/30 to-purple-900/30 border-b border-purple-500/20 px-4 sm:px-6 py-3 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            {/* Score and Combo */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/20 border border-yellow-400/40">
+                <i className="fas fa-star text-yellow-400"></i>
+                <span className="text-yellow-300 font-bold text-sm">
+                  {soloStats.score.toLocaleString()} pts
+                </span>
+              </div>
+              
+              {soloStats.combo > 1 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-400/40 animate-pulse">
+                  <i className="fas fa-fire text-orange-400"></i>
+                  <span className="text-orange-300 font-bold text-sm">{soloStats.combo}x Combo</span>
+                </div>
+              )}
+            </div>
+
+            {/* Difficulty and Power-ups */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-600/50">
+                <i className="fas fa-chart-line text-blue-400 text-xs"></i>
+                <span className="text-blue-300 text-xs font-semibold">
+                  {soloStats.difficultyLevel}
+                </span>
+              </div>
+
+              {soloStats.powerUps.shield > 0 && (
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-400/40 ${
+                  soloStats.shieldActive ? 'animate-pulse' : ''
+                }`}>
+                  <i className="fas fa-shield-alt text-blue-400 text-xs"></i>
+                  <span className="text-blue-300 text-xs font-bold">
+                    {soloStats.powerUps.shield}
+                  </span>
+                </div>
+              )}
+
+              {soloStats.isSlowTime && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-400/40 animate-pulse">
+                  <i className="fas fa-clock text-purple-400 text-xs"></i>
+                  <span className="text-purple-300 text-xs font-bold">SLOW</span>
+                </div>
+              )}
+
+              {soloStats.creativityBonus > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-400/40">
+                  <i className="fas fa-lightbulb text-green-400 text-xs"></i>
+                  <span className="text-green-300 text-xs font-bold">+{Math.floor(soloStats.creativityBonus * 10)}%</span>
+                </div>
+              )}
+            </div>
+
+            {/* Max Combo Record */}
+            {soloStats.maxCombo > 1 && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-400/40">
+                <i className="fas fa-trophy text-purple-400 text-xs"></i>
+                <span className="text-purple-300 text-xs">
+                  Best: {soloStats.maxCombo}x
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Chat Area with modern scrollbar */}
       <div
         ref={chatBoxRef}
@@ -712,87 +800,241 @@ const GameScreen: React.FC<GameScreenProps> = ({
       {roomData.room.status === "CLOSED" && (
         <div className="absolute inset-0 z-40 flex items-center justify-center px-4 py-10 bg-slate-950/90 backdrop-blur-xl">
           <div className="w-full max-w-3xl bg-gradient-to-b from-slate-900/90 to-slate-800/90 border border-blue-500/30 rounded-3xl p-6 sm:p-10 shadow-2xl text-center space-y-6">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-blue-300 font-semibold">
-                เกมจบแล้ว
-              </p>
-              <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center justify-center gap-3">
-                <i className="fas fa-trophy text-yellow-300"></i>
-                โพเดียมผู้รอดชีวิต
-              </h2>
-              <p className="text-slate-400 text-sm">
-                ผู้ที่อยู่ได้นานที่สุด 3 คนได้รับคะแนนพิเศษ
-              </p>
-              {!isOwner && autoReturnCountdown !== null && (
-                <div className="text-amber-300 text-sm font-semibold">
-                  ระบบจะพาคุณกลับ Lobby ใน {autoReturnCountdown} วินาที
+            
+            {/* Solo Mode Game End Screen */}
+            {isSoloMode ? (
+              <>
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.3em] text-purple-300 font-semibold">
+                    โหมดเล่นคนเดียว
+                  </p>
+                  
+                  {/* Check if bomb word was found by looking at last few messages */}
+                  {(() => {
+                    const bombWord = roomData.room.bomb_word;
+                    const lastMessage = roomData.messages?.[roomData.messages.length - 1];
+                    const bombWordFound = bombWord && lastMessage?.message_text.toLowerCase().trim() === bombWord.toLowerCase();
+                    
+                    return bombWordFound ? (
+                      <>
+                        <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center justify-center gap-3">
+                          <i className="fas fa-trophy text-yellow-300 animate-bounce"></i>
+                          คุณชนะแล้ว!
+                        </h2>
+                        <p className="text-green-300 text-sm font-semibold">
+                          🎉 คุณหาคำระเบิด &ldquo;{bombWord}&rdquo; เจอแล้ว!
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center justify-center gap-3">
+                          <i className="fas fa-times-circle text-red-400"></i>
+                          เกมจบแล้ว
+                        </h2>
+                        <p className="text-red-300 text-sm font-semibold">
+                          💥 คุณโดนคำกับดักหรือใช้เวลาหมด
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
-              )}
-            </div>
 
-            {showPodium ? (
-              <div className="grid gap-4 sm:grid-cols-3">
-                {podiumEntries.map((entry) => (
-                  <div
-                    key={entry.playerId}
-                    className={`relative rounded-3xl p-5 border shadow-xl flex flex-col items-center gap-2 ${
-                      entry.position === 1
-                        ? "bg-gradient-to-b from-yellow-400/30 to-yellow-600/20 border-yellow-300/40"
-                        : entry.position === 2
-                        ? "bg-gradient-to-b from-slate-200/20 to-slate-400/10 border-slate-200/40"
-                        : "bg-gradient-to-b from-amber-700/20 to-amber-900/10 border-amber-500/30"
-                    }`}
-                  >
-                    <div className="text-4xl">
-                      {entry.position === 1
-                        ? "🥇"
-                        : entry.position === 2
-                        ? "🥈"
-                        : "🥉"}
+                {/* Solo Stats Display */}
+                {soloStats && (
+                  <div className="bg-gradient-to-br from-purple-900/40 to-blue-900/40 rounded-2xl p-6 border border-purple-500/30">
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-center gap-2">
+                      <i className="fas fa-chart-bar text-purple-400"></i>
+                      สถิติการเล่น
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                      <div className="bg-gradient-to-br from-yellow-500/20 to-amber-500/20 rounded-xl p-3 border border-yellow-400/30">
+                        <div className="text-center">
+                          <i className="fas fa-star text-yellow-400 text-xl mb-1"></i>
+                          <p className="text-yellow-300 font-bold text-lg">{soloStats.score.toLocaleString()}</p>
+                          <p className="text-yellow-200/70 text-xs">คะแนนรวม</p>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-orange-500/20 to-red-500/20 rounded-xl p-3 border border-orange-400/30">
+                        <div className="text-center">
+                          <i className="fas fa-fire text-orange-400 text-xl mb-1"></i>
+                          <p className="text-orange-300 font-bold text-lg">{soloStats.maxCombo}x</p>
+                          <p className="text-orange-200/70 text-xs">Combo สูงสุด</p>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl p-3 border border-blue-400/30">
+                        <div className="text-center">
+                          <i className="fas fa-chart-line text-blue-400 text-xl mb-1"></i>
+                          <p className="text-blue-300 font-bold text-sm">{soloStats.difficultyLevel}</p>
+                          <p className="text-blue-200/70 text-xs">ระดับความยาก</p>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl p-3 border border-green-400/30">
+                        <div className="text-center">
+                          <i className="fas fa-lightbulb text-green-400 text-xl mb-1"></i>
+                          <p className="text-green-300 font-bold text-lg">+{Math.floor(soloStats.creativityBonus * 10)}%</p>
+                          <p className="text-green-200/70 text-xs">โบนัสความคิดสร้างสรรค์</p>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-200">
-                      อันดับ {entry.position}
-                    </p>
-                    <p className="text-lg font-bold text-white">
-                      {entry.playerName}
-                    </p>
-                    <p
-                      className={`text-xs font-semibold ${
-                        entry.status === "survivor"
-                          ? "text-emerald-300"
-                          : "text-red-300"
-                      }`}
-                    >
-                      {entry.status === "survivor" ? "รอดชีวิต" : "ถูกคัดออก"}
-                    </p>
-                    <div className="text-sm font-bold text-amber-300 flex items-center gap-2">
-                      <i className="fas fa-star"></i>+{entry.points} คะแนน
+
+                    {/* Power-ups used */}
+                    {(soloStats.powerUps.hintReveal > 0 || soloStats.powerUps.slowTime > 0 || soloStats.powerUps.shield > 0 || soloStats.powerUps.wordScanner > 0) && (
+                      <div className="pt-4 border-t border-slate-700/50">
+                        <p className="text-slate-300 text-sm mb-2 font-semibold">Power-ups ที่ใช้:</p>
+                        <div className="flex flex-wrap gap-2 justify-center">
+                          {soloStats.powerUps.hintReveal > 0 && (
+                            <div className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-500/20 border border-blue-400/40">
+                              <i className="fas fa-eye text-blue-400 text-xs"></i>
+                              <span className="text-blue-300 text-xs">คำใบ้ {soloStats.powerUps.hintReveal}</span>
+                            </div>
+                          )}
+                          {soloStats.powerUps.slowTime > 0 && (
+                            <div className="flex items-center gap-1 px-3 py-1 rounded-lg bg-purple-500/20 border border-purple-400/40">
+                              <i className="fas fa-clock text-purple-400 text-xs"></i>
+                              <span className="text-purple-300 text-xs">ชะลอเวลา {soloStats.powerUps.slowTime}</span>
+                            </div>
+                          )}
+                          {soloStats.powerUps.shield > 0 && (
+                            <div className="flex items-center gap-1 px-3 py-1 rounded-lg bg-cyan-500/20 border border-cyan-400/40">
+                              <i className="fas fa-shield-alt text-cyan-400 text-xs"></i>
+                              <span className="text-cyan-300 text-xs">โล่ป้องกัน {soloStats.powerUps.shield}</span>
+                            </div>
+                          )}
+                          {soloStats.powerUps.wordScanner > 0 && (
+                            <div className="flex items-center gap-1 px-3 py-1 rounded-lg bg-green-500/20 border border-green-400/40">
+                              <i className="fas fa-search text-green-400 text-xs"></i>
+                              <span className="text-green-300 text-xs">วิเคราะห์คำ {soloStats.powerUps.wordScanner}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Performance Rating */}
+                    <div className="pt-4 border-t border-slate-700/50 mt-4">
+                      {(() => {
+                        const totalScore = soloStats.score;
+                        const rating = totalScore >= 1000 ? "🏆 ปรมาจารย์" : 
+                                     totalScore >= 500 ? "⭐ เซียนแท้" :
+                                     totalScore >= 200 ? "👍 ดีใจใจ" :
+                                     totalScore >= 50 ? "💪 พอใช้ได้" : "😅 อีกนิดนะ";
+                        
+                        return (
+                          <div className="text-center">
+                            <p className="text-slate-300 text-sm mb-1">ผลการประเมิน</p>
+                            <p className="text-xl font-bold text-white">{rating}</p>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-400">
-                {hasStartedGame ? "ยังไม่มีผู้ชนะ" : "ยังไม่มีคะแนน"}
-              </p>
-            )}
+                )}
 
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button
-                onClick={onLeaveRoom}
-                className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow-lg hover:shadow-blue-500/30 transition-all"
-              >
-                กลับ Lobby
-              </button>
-              {onResetGame && allowOwnerControls && (
-                <button
-                  onClick={onResetGame}
-                  className="px-5 py-3 rounded-2xl border border-slate-600 text-slate-200 hover:border-blue-400 hover:text-white transition-all"
-                >
-                  รีเซ็ตเพื่อเริ่มใหม่
-                </button>
-              )}
-            </div>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={onLeaveRoom}
+                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-500 hover:to-cyan-500 text-white font-semibold shadow-lg hover:shadow-purple-500/30 transition-all"
+                  >
+                    <i className="fas fa-home mr-2"></i>กลับ Lobby
+                  </button>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-3 rounded-2xl border-2 border-purple-500/50 text-purple-300 hover:border-purple-400 hover:text-white hover:bg-purple-500/10 transition-all"
+                  >
+                    <i className="fas fa-redo mr-2"></i>เล่นใหม่
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Multiplayer Mode Game End Screen */
+              <>
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.3em] text-blue-300 font-semibold">
+                    เกมจบแล้ว
+                  </p>
+                  <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center justify-center gap-3">
+                    <i className="fas fa-trophy text-yellow-300"></i>
+                    โพเดียมผู้รอดชีวิต
+                  </h2>
+                  <p className="text-slate-400 text-sm">
+                    ผู้ที่อยู่ได้นานที่สุด 3 คนได้รับคะแนนพิเศษ
+                  </p>
+                  {!isOwner && autoReturnCountdown !== null && (
+                    <div className="text-amber-300 text-sm font-semibold">
+                      ระบบจะพาคุณกลับ Lobby ใน {autoReturnCountdown} วินาที
+                    </div>
+                  )}
+                </div>
+
+                {showPodium ? (
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    {podiumEntries.map((entry) => (
+                      <div
+                        key={entry.playerId}
+                        className={`relative rounded-3xl p-5 border shadow-xl flex flex-col items-center gap-2 ${
+                          entry.position === 1
+                            ? "bg-gradient-to-b from-yellow-400/30 to-yellow-600/20 border-yellow-300/40"
+                            : entry.position === 2
+                            ? "bg-gradient-to-b from-slate-200/20 to-slate-400/10 border-slate-200/40"
+                            : "bg-gradient-to-b from-amber-700/20 to-amber-900/10 border-amber-500/30"
+                        }`}
+                      >
+                        <div className="text-4xl">
+                          {entry.position === 1
+                            ? "🥇"
+                            : entry.position === 2
+                            ? "🥈"
+                            : "🥉"}
+                        </div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-200">
+                          อันดับ {entry.position}
+                        </p>
+                        <p className="text-lg font-bold text-white">
+                          {entry.playerName}
+                        </p>
+                        <p
+                          className={`text-xs font-semibold ${
+                            entry.status === "survivor"
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }`}
+                        >
+                          {entry.status === "survivor" ? "รอดชีวิต" : "ถูกคัดออก"}
+                        </p>
+                        <div className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                          <i className="fas fa-star"></i>+{entry.points} คะแนน
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400">
+                    {hasStartedGame ? "ยังไม่มีผู้ชนะ" : "ยังไม่มีคะแนน"}
+                  </p>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={onLeaveRoom}
+                    className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow-lg hover:shadow-blue-500/30 transition-all"
+                  >
+                    กลับ Lobby
+                  </button>
+                  {onResetGame && allowOwnerControls && (
+                    <button
+                      onClick={onResetGame}
+                      className="px-5 py-3 rounded-2xl border border-slate-600 text-slate-200 hover:border-blue-400 hover:text-white transition-all"
+                    >
+                      รีเซ็ตเพื่อเริ่มใหม่
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
