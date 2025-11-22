@@ -35,7 +35,7 @@ export interface RoomData {
   podium?: PodiumEntry[];
 }
 
-export type GameScreen = 'loading' | 'name' | 'lobby' | 'game';
+export type GameScreen = 'loading' | 'name' | 'modeSelect' | 'multiplayer' | 'game';
 
 export type ToastType = 'info' | 'success' | 'error';
 

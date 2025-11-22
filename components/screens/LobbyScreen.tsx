@@ -2,21 +2,6 @@
 
 import React from 'react';
 
-interface SoloStats {
-  gamesPlayed: number;
-  gamesWon: number;
-  winRate: number;
-  bestScore: number;
-  totalScore: number;
-  averageScore: number;
-  bestTime: number;
-  totalTime: number;
-  averageTime: number;
-  longestCombo: number;
-  totalWordsFound: number;
-  achievements: string[];
-}
-
 interface LobbyScreenProps {
   playerName: string | null;
   roomCode: string;
@@ -24,9 +9,9 @@ interface LobbyScreenProps {
   onCreateRoom: () => void;
   onJoinRoom: () => void;
   onResetProfile: () => void;
-  onStartSolo: () => void;
-  soloStats?: SoloStats;
   onShowRules?: (gameMode: "solo" | "multiplayer") => void;
+  onGoBack: () => void;
+  isJoiningRoom?: boolean;
 }
 
 const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -36,184 +21,191 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onCreateRoom,
   onJoinRoom,
   onResetProfile,
-  onStartSolo,
-  soloStats,
   onShowRules,
+  onGoBack,
+  isJoiningRoom = false,
 }) => {
   return (
-    <div className="w-full max-w-2xl mx-auto h-full flex flex-col p-4 sm:p-6 lg:p-8 animate-slide-up">
-      {/* Header */}
-      <div className="surface-card rounded-3xl p-4 sm:p-6 mb-6 sm:mb-8 shadow-xl">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg">
-              <i className="fas fa-gamepad text-xl sm:text-2xl text-white"></i>
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                Lobby
-              </h2>
-              <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-400 mt-1">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                <span className="hidden sm:inline">Online as</span>
-                <span className="text-white font-semibold text-sm sm:text-base">{playerName}</span>
+    <div className="w-full max-w-5xl mx-auto h-full flex flex-col gap-6 p-4 sm:p-6 lg:p-8 animate-slide-up">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          onClick={onGoBack}
+          className="inline-flex items-center gap-2 w-full sm:w-auto justify-center px-4 py-3 rounded-2xl border border-slate-700/60 text-slate-200 hover:text-white hover:border-blue-400/60 hover:bg-blue-500/10 transition-all"
+        >
+          <i className="fas fa-arrow-left"></i>
+          กลับหน้าเลือกโหมด
+        </button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button
+            onClick={onResetProfile}
+            className="flex-1 px-4 py-3 rounded-2xl border border-slate-700/60 text-slate-300 hover:text-white hover:border-red-400/60 hover:bg-red-500/10 transition-all flex items-center justify-center gap-2"
+          >
+            <i className="fas fa-sync-alt"></i>
+            รีเซ็ตโปรไฟล์
+          </button>
+          {onShowRules && (
+            <button
+              onClick={() => onShowRules("multiplayer")}
+              className="flex-1 px-4 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow-lg hover:shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
+            >
+              <i className="fas fa-book-open"></i>
+              อ่านกติกา
+            </button>
+          )}
+        </div>
+      </div>
+      {/* Hero Header */}
+      <div className="surface-card rounded-3xl p-6 sm:p-8 shadow-2xl border border-blue-500/20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/15 via-indigo-600/10 to-cyan-500/15 opacity-80"></div>
+        <div className="relative flex flex-col gap-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg">
+                <i className="fas fa-users text-2xl text-white"></i>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-blue-200 font-semibold">
+                  Multiplayer Arena
+                </p>
+                <h1 className="text-3xl font-black bg-gradient-to-r from-blue-300 to-cyan-200 bg-clip-text text-transparent">
+                  ยินดีต้อนรับ {playerName}
+                </h1>
+                <p className="text-slate-300 text-sm mt-1">
+                  ชวนเพื่อนมาหลบระเบิดในแชทร้อนระอุนี้ ใครพลาดพูดคำต้องห้ามคือผู้แพ้!
+                </p>
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
-            {onShowRules && (
-              <button
-                onClick={() => onShowRules("multiplayer")}
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-800/50 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 transition-all flex items-center justify-center border border-slate-700/50 hover:border-blue-500/50"
-                title="กติกาการเล่น"
-              >
-                <i className="fas fa-book-open text-base sm:text-lg"></i>
-              </button>
-            )}
-            <button
-              onClick={onResetProfile}
-              className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-800/50 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all flex items-center justify-center border border-slate-700/50 hover:border-red-500/50"
-              title="ออกจากระบบ"
-            >
-              <i className="fas fa-sign-out-alt text-base sm:text-lg"></i>
-            </button>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/40 p-4">
+              <p className="text-xs text-slate-400">จำนวนผู้เล่นต่อห้อง</p>
+              <p className="text-2xl font-bold text-white">2 - 12</p>
+              <p className="text-slate-400 text-xs mt-1">เหมาะกับทั้งกลุ่มเล็กและใหญ่</p>
+            </div>
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/40 p-4">
+              <p className="text-xs text-slate-400">ระยะเวลาแต่ละรอบ</p>
+              <p className="text-2xl font-bold text-amber-300">10 นาที</p>
+              <p className="text-slate-400 text-xs mt-1">เอาตัวรอดให้ครบเวลา</p>
+            </div>
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/40 p-4">
+              <p className="text-xs text-slate-400">เงื่อนไขชนะ</p>
+              <p className="text-2xl font-bold text-emerald-300">พูดไม่ซ้ำ</p>
+              <p className="text-slate-400 text-xs mt-1">และอย่าพูดคำระเบิด!</p>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col gap-4 sm:gap-6 overflow-y-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Host Game Card */}
-        <div className="surface-card p-6 sm:p-8 rounded-3xl relative overflow-hidden group shadow-xl hover:shadow-2xl transition-all">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-blue-600/20 to-cyan-500/20 rounded-full -mr-20 -mt-20 blur-3xl group-hover:scale-150 transition-transform duration-500"></div>
-          <div className="relative z-10">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center shadow-lg">
-                  <i className="fas fa-crown text-xl text-yellow-300"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg sm:text-xl font-bold text-white mb-1">สร้างห้อง</h3>
-                  <p className="text-slate-400 text-xs sm:text-sm">เป็นเจ้าของห้องและเริ่มเกมใหม่</p>
-                </div>
+        <div className="surface-card p-6 sm:p-8 rounded-3xl relative overflow-hidden shadow-xl border border-blue-500/10">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-indigo-500/10 to-cyan-500/20 opacity-60"></div>
+          <div className="relative z-10 flex flex-col h-full gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center shadow-lg">
+                <i className="fas fa-crown text-2xl text-yellow-300"></i>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">สร้างห้อง</h3>
+                <p className="text-slate-400 text-sm">ตั้งคำระเบิดลับ พร้อมคำใบ้สุดโหด</p>
               </div>
             </div>
+            <ul className="text-slate-400 text-sm space-y-2">
+              <li className="flex items-center gap-2">
+                <i className="fas fa-check text-emerald-400"></i>
+                เลือกคำระเบิดและคำใบ้ได้อย่างอิสระ
+              </li>
+              <li className="flex items-center gap-2">
+                <i className="fas fa-check text-emerald-400"></i>
+                พร้อมฟีเจอร์ปิดห้อง/รีเซ็ตในคลิกเดียว
+              </li>
+            </ul>
             <button
               onClick={onCreateRoom}
-              className="w-full btn-primary py-4 rounded-2xl font-semibold text-base sm:text-lg flex items-center justify-center gap-3 shadow-xl hover:shadow-2xl transition-all group"
+              className="mt-auto w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-500 text-white font-semibold text-lg shadow-2xl hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-3"
             >
-              <i className="fas fa-plus-circle text-xl"></i>
-              <span>สร้างห้องใหม่</span>
-              <i className="fas fa-arrow-right text-sm group-hover:translate-x-1 transition-transform"></i>
+              <i className="fas fa-plus-circle"></i>
+              สร้างห้องใหม่
             </button>
           </div>
         </div>
 
         {/* Join Game Card */}
-        <div className="surface-card p-6 sm:p-8 rounded-3xl relative overflow-hidden group shadow-xl hover:shadow-2xl transition-all">
-          <div className="absolute bottom-0 left-0 w-40 h-40 bg-gradient-to-tr from-cyan-600/20 to-blue-500/20 rounded-full -ml-20 -mb-20 blur-3xl group-hover:scale-150 transition-transform duration-500"></div>
-          <div className="relative z-10">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg">
-                  <i className="fas fa-users text-xl text-white"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg sm:text-xl font-bold text-white mb-1">เข้าร่วมห้อง</h3>
-                  <p className="text-slate-400 text-xs sm:text-sm">ใส่รหัสห้องเพื่อเข้าเล่น</p>
-                </div>
-              </div>
+        <div className="surface-card p-6 sm:p-8 rounded-3xl relative overflow-hidden shadow-xl border border-cyan-500/10">
+          <div className="absolute inset-0 bg-gradient-to-tl from-cyan-600/20 via-blue-500/10 to-purple-500/20 opacity-60"></div>
+          {isJoiningRoom && (
+            <div className="absolute inset-0 z-20 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 text-white">
+              <div className="w-12 h-12 border-4 border-cyan-400/30 border-t-cyan-300 rounded-full animate-spin"></div>
+              <p className="text-sm font-semibold tracking-wide">กำลังเข้าร่วมห้อง...</p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none">
-                  <i className="fas fa-hashtag text-lg"></i>
-                </div>
-                <input
-                  value={roomCode}
-                  onChange={(e) => onRoomCodeChange(e.target.value)}
-                  type="text"
-                  placeholder="000000"
-                  maxLength={6}
-                  className="w-full bg-slate-900/60 text-white text-center text-2xl sm:text-3xl pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-700/50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 font-mono tracking-[0.5em] transition-all backdrop-blur-sm placeholder-slate-600"
-                />
-              </div>
-              <button
-                onClick={onJoinRoom}
-                className="bg-gradient-to-r from-slate-700 to-slate-600 hover:from-blue-600 hover:to-blue-500 text-white px-8 py-4 rounded-2xl font-semibold transition-all border border-slate-600/50 hover:border-blue-500/50 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 sm:w-auto w-full"
-              >
-                <i className="fas fa-door-open"></i>
-                <span>เข้าห้อง</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Solo Mode Card */}
-        <div className="surface-card p-6 sm:p-8 rounded-3xl relative overflow-hidden group shadow-xl hover:shadow-2xl transition-all">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-600/10 via-indigo-600/10 to-blue-500/10 opacity-60 group-hover:opacity-90 transition-opacity"></div>
-          <div className="relative z-10 space-y-4">
+          )}
+          <div className="relative z-10 flex flex-col h-full gap-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg">
-                <i className="fas fa-robot text-xl text-white"></i>
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg">
+                <i className="fas fa-door-open text-2xl text-white"></i>
               </div>
-              <div className="flex-1">
-                <h3 className="text-lg sm:text-xl font-bold text-white">เล่นคนเดียว</h3>
-                <p className="text-slate-300 text-xs sm:text-sm">ประลองกับบอทที่ตั้งคำกับดักให้เอง</p>
+              <div>
+                <h3 className="text-xl font-bold text-white">เข้าร่วมห้อง</h3>
+                <p className="text-slate-400 text-sm">ใส่รหัส 6 หลักเพื่อร่วมวงสนทนา</p>
               </div>
-              {soloStats && soloStats.gamesPlayed > 0 && (
-                <div className="text-right">
-                  <div className="text-xs text-slate-400">Win Rate</div>
-                  <div className="text-lg font-bold text-purple-300">{soloStats.winRate.toFixed(1)}%</div>
-                </div>
-              )}
             </div>
-            
-            {/* Solo Statistics */}
-            {soloStats && soloStats.gamesPlayed > 0 && (
-              <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-slate-800/30 border border-slate-700/30">
-                <div className="text-center">
-                  <div className="text-xs text-slate-400">เกมที่เล่น</div>
-                  <div className="text-sm font-bold text-white">{soloStats.gamesPlayed}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-400">คะแนนสูงสุด</div>
-                  <div className="text-sm font-bold text-yellow-400">{soloStats.bestScore.toLocaleString()}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-400">Combo สูงสุด</div>
-                  <div className="text-sm font-bold text-orange-400">{soloStats.longestCombo}x</div>
-                </div>
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-300 pointer-events-none">
+                <i className="fas fa-hashtag text-lg"></i>
               </div>
-            )}
-            <div className="flex gap-3">
-              <button
-                onClick={onStartSolo}
-                className="flex-1 bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-500 hover:to-cyan-500 text-white py-4 rounded-2xl font-semibold flex items-center justify-center gap-3 transition-all shadow-xl hover:shadow-2xl"
-              >
-                <i className="fas fa-bolt"></i>
-                <span>เริ่มโหมด Solo</span>
-              </button>
-              {onShowRules && (
-                <button
-                  onClick={() => onShowRules("solo")}
-                  className="w-14 bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 hover:text-white py-4 rounded-2xl transition-all flex items-center justify-center border border-slate-600/50"
-                  title="กติกาโหมด Solo"
-                >
-                  <i className="fas fa-question-circle"></i>
-                </button>
-              )}
+              <input
+                value={roomCode}
+                onChange={(e) => onRoomCodeChange(e.target.value)}
+                type="text"
+                placeholder="000000"
+                maxLength={6}
+                className="w-full bg-slate-900/60 text-white text-center text-3xl tracking-[0.6em] pl-14 pr-4 py-5 rounded-2xl border-2 border-slate-700/60 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/40 font-mono transition-all"
+              />
             </div>
+            <div className="text-slate-400 text-xs">
+              ป้อนรหัสแล้วกด &ldquo;เข้าร่วมห้อง&rdquo; หรือรอระบบเชื่อมต่ออัตโนมัติ
+            </div>
+            <button
+              onClick={!isJoiningRoom ? onJoinRoom : undefined}
+              disabled={isJoiningRoom}
+              className={`mt-auto w-full px-6 py-4 rounded-2xl text-white font-semibold text-lg border border-white/30 transition-all flex items-center justify-center gap-3 ${
+                isJoiningRoom ? "bg-white/5 cursor-not-allowed opacity-70" : "bg-white/10 hover:bg-white/20"
+              }`}
+            >
+              {isJoiningRoom ? (
+                <>
+                  <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                  <span>กำลังเชื่อมต่อ...</span>
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-sign-in-alt"></i>
+                  เข้าห้องด้วยรหัส
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Footer Info */}
-      <div className="mt-6 text-center">
-        <p className="text-slate-500 text-xs sm:text-sm">
-          <i className="fas fa-info-circle mr-2"></i>
-          รองรับการเล่นบนมือถือ แท็บเล็ต และคอมพิวเตอร์
-        </p>
+      {/* Tips & Info */}
+      <div className="surface-card rounded-3xl p-6 border border-slate-700/40 shadow-xl">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 text-slate-300">
+            <div className="w-10 h-10 rounded-2xl bg-slate-800/60 flex items-center justify-center">
+              <i className="fas fa-lightbulb text-yellow-300"></i>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white">Tips</p>
+              <p className="text-xs text-slate-400">คุยกับเพื่อนให้เป็นธรรมชาติ แล้วล่อให้เขาพูดคำต้องห้าม</p>
+            </div>
+          </div>
+          <p className="text-slate-500 text-xs sm:text-sm text-right w-full md:w-auto">
+            รองรับทุกอุปกรณ์ | มีระบบโฮสต์สำรอง | แนะนำผู้เล่น 4-8 คน
+          </p>
+        </div>
       </div>
     </div>
   );
