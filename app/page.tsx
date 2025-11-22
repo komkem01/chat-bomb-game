@@ -25,6 +25,8 @@ import LobbyScreen from "@/components/screens/LobbyScreen";
 import GameScreenComponent from "@/components/screens/GameScreen";
 
 const FETCH_DEBOUNCE_MS = 50; // Reduce debounce for faster updates
+const REALTIME_KEEPALIVE_INTERVAL_MS = 4000; // backup polling even when realtime works
+const POLLING_FALLBACK_INTERVAL_MS = 1500; // faster polling when realtime is unavailable
 const ROUND_DURATION_MS = 10 * 60 * 1000;
 const SOLO_TIME_LIMIT = 5 * 60 * 1000; // 5 minutes time limit to find the bomb word
 const BOT_RESPONSE_DELAY = { min: 1200, max: 3000 };
@@ -513,11 +515,19 @@ export default function ChatBombGame() {
   );
   const chatBoxRef = useRef<HTMLDivElement>(null);
   const roomFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const roomPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const autoReturnIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const roundTimerRef = useRef<NodeJS.Timeout | null>(null);
   const soloSessionRef = useRef<SoloSessionState | null>(null);
   const soloBotTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasShownCloseToastRef = useRef(false);
+
+  const clearRoomPollInterval = useCallback(() => {
+    if (roomPollIntervalRef.current) {
+      clearInterval(roomPollIntervalRef.current);
+      roomPollIntervalRef.current = null;
+    }
+  }, []);
 
   const clearSoloBotTimer = useCallback(() => {
     if (soloBotTimeoutRef.current) {
@@ -659,6 +669,7 @@ export default function ChatBombGame() {
       if (unsubscribeRoomListener.current) {
         unsubscribeRoomListener.current.unsubscribe();
       }
+      clearRoomPollInterval();
       if (autoReturnIntervalRef.current) {
         clearInterval(autoReturnIntervalRef.current);
       }
@@ -667,7 +678,7 @@ export default function ChatBombGame() {
       }
       clearSoloBotTimer();
     };
-  }, [clearSoloBotTimer]);
+  }, [clearRoomPollInterval, clearSoloBotTimer]);
 
   const switchScreen = useCallback((screen: GameScreenType) => {
     setGameState((prev) => ({ ...prev, currentScreen: screen }));
@@ -753,6 +764,7 @@ export default function ChatBombGame() {
       unsubscribeRoomListener.current.unsubscribe();
       unsubscribeRoomListener.current = null;
     }
+    clearRoomPollInterval();
     if (roomFetchTimeoutRef.current) {
       clearTimeout(roomFetchTimeoutRef.current);
       roomFetchTimeoutRef.current = null;
@@ -773,7 +785,7 @@ export default function ChatBombGame() {
     switchScreen("lobby");
     setChatInput("");
     setRoomCodeInput("");
-  }, [switchScreen, resetSoloSession]);
+  }, [switchScreen, resetSoloSession, clearRoomPollInterval]);
 
   const listenToRoom = (roomId: string) => {
     if (unsubscribeRoomListener.current) {
@@ -784,6 +796,8 @@ export default function ChatBombGame() {
       clearTimeout(roomFetchTimeoutRef.current);
       roomFetchTimeoutRef.current = null;
     }
+    clearRoomPollInterval();
+    setRealtimeConnected(false);
 
     let retryCount = 0;
     const MAX_RETRIES = 3;
@@ -830,6 +844,18 @@ export default function ChatBombGame() {
       }
     };
 
+    const startPolling = (intervalMs: number, reason: "keepalive" | "fallback") => {
+      clearRoomPollInterval();
+      roomPollIntervalRef.current = setInterval(() => {
+        fetchSnapshot(false);
+      }, intervalMs);
+      console.info(
+        reason === "keepalive"
+          ? `📡 Realtime guard active: polling every ${intervalMs}ms for room ${roomId}`
+          : `♻️ Polling fallback active: refreshing every ${intervalMs}ms for room ${roomId}`
+      );
+    };
+
     fetchSnapshot(true); // Initial load with retry
 
     const realtimeChannel = subscribeToRoom(roomId, () => {
@@ -838,6 +864,7 @@ export default function ChatBombGame() {
 
     if (realtimeChannel) {
       console.info("✅ Subscribed to realtime updates for room", roomId);
+      startPolling(REALTIME_KEEPALIVE_INTERVAL_MS, "keepalive");
       
       // Monitor connection status
       realtimeChannel.subscribe((status, err) => {
@@ -854,18 +881,19 @@ export default function ChatBombGame() {
       unsubscribeRoomListener.current = {
         unsubscribe: () => {
           realtimeChannel.unsubscribe();
+          clearRoomPollInterval();
           setRealtimeConnected(false);
         },
       } as any;
     } else {
-      console.warn("⚠️ Realtime unavailable. Falling back to polling every 3s");
+      console.warn(`⚠️ Realtime unavailable. Falling back to polling every ${POLLING_FALLBACK_INTERVAL_MS}ms`);
       setRealtimeConnected(false);
-      const pollInterval = setInterval(() => {
-        fetchSnapshot(false);
-      }, 3000);
+      startPolling(POLLING_FALLBACK_INTERVAL_MS, "fallback");
 
       unsubscribeRoomListener.current = {
-        unsubscribe: () => clearInterval(pollInterval),
+        unsubscribe: () => {
+          clearRoomPollInterval();
+        },
       } as any;
     }
   };
