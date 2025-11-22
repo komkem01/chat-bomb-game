@@ -79,6 +79,23 @@ const GameScreen: React.FC<GameScreenProps> = ({
   soloStats,
   realtimeConnected = false,
 }) => {
+  const realtimeStatusMeta = realtimeConnected
+    ? {
+        bubbleClass:
+          'bg-green-500/10 border border-green-500/30 text-green-200 shadow-green-500/10',
+        icon: 'fa-wifi',
+        label: 'โหมด Real-time',
+        description: 'ส่งข้อมูลทันที',
+        title: 'เชื่อมต่อกับ Supabase Realtime สำเร็จ ข้อความจะเห็นพร้อมกันทุกคน',
+      }
+    : {
+        bubbleClass:
+          'bg-amber-500/15 border border-amber-400/40 text-amber-100 shadow-amber-500/10',
+        icon: 'fa-sync-alt animate-spin',
+        label: 'โหมดสำรอง',
+        description: 'อัปเดตทุก 1.5 วินาที',
+        title: 'กำลังใช้โหมดสำรอง (Polling) เนื่องจากยังเชื่อมต่อ Realtime ไม่ได้ ระบบจะรีเฟรชอัตโนมัติทุก 1.5 วินาที',
+      };
   const isOwner = roomData.room.owner_id === userId;
   const aliveCount =
     roomData.players?.filter((p) => !p.is_eliminated).length || 0;
@@ -366,16 +383,19 @@ const GameScreen: React.FC<GameScreenProps> = ({
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Realtime connection indicator for multiplayer */}
           {!isSoloMode && (
-            <div 
-              className={`px-2 py-1.5 rounded-lg text-xs flex items-center gap-1.5 ${
-                realtimeConnected 
-                  ? 'bg-green-500/10 border border-green-500/30 text-green-400' 
-                  : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
-              }`}
-              title={realtimeConnected ? 'เชื่อมต่อ Realtime แล้ว' : 'ใช้ Polling Mode (อัพเดททุก 3 วินาที)'}
+            <div
+              className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 shadow-md ${realtimeStatusMeta.bubbleClass}`}
+              title={realtimeStatusMeta.title}
             >
-              <i className={`fas ${realtimeConnected ? 'fa-wifi' : 'fa-sync-alt'} ${!realtimeConnected && 'animate-spin'}`}></i>
-              <span className="hidden sm:inline">{realtimeConnected ? 'Real-time' : 'Polling'}</span>
+              <i className={`fas ${realtimeStatusMeta.icon}`}></i>
+              <div className="flex flex-col leading-tight">
+                <span className="font-semibold tracking-tight">
+                  {realtimeStatusMeta.label}
+                </span>
+                <span className="text-[10px] text-white/80">
+                  {realtimeStatusMeta.description}
+                </span>
+              </div>
             </div>
           )}
           
