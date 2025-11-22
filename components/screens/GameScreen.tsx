@@ -226,7 +226,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
             )}
 
             {/* Message text with better typography */}
-            <p className="relative z-10 font-medium tracking-wide">
+            <p className="relative z-10 font-medium tracking-wide whitespace-pre-line break-words">
               {msg.message_text}
             </p>
 
@@ -553,7 +553,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
       {/* Chat Area with modern scrollbar */}
       <div
         ref={chatBoxRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-1 scroll-smooth bg-gradient-to-b from-slate-900/30 via-slate-900/10 to-transparent
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-1 scroll-smooth bg-gradient-to-b from-slate-900/30 via-slate-900/10 to-transparent
           scrollbar-thin scrollbar-track-slate-800/30 scrollbar-thumb-blue-500/30 hover:scrollbar-thumb-blue-500/50"
       >
         {/* Ambient background effects */}
@@ -577,7 +577,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 {recentEliminations.map((msg) => (
                   <div key={msg.id} className="flex items-center justify-between text-xs sm:text-sm text-red-200">
                     <span className="font-bold">{msg.sender_name}</span>
-                    <span className="text-red-300/70">{msg.message_text}</span>
+                    <span className="text-red-300/70 break-words whitespace-pre-line">{msg.message_text}</span>
                   </div>
                 ))}
               </div>
