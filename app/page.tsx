@@ -24,7 +24,7 @@ import NameScreen from "@/components/screens/NameScreen";
 import LobbyScreen from "@/components/screens/LobbyScreen";
 import GameScreenComponent from "@/components/screens/GameScreen";
 
-const FETCH_DEBOUNCE_MS = 120;
+const FETCH_DEBOUNCE_MS = 50; // Reduce debounce for faster updates
 const ROUND_DURATION_MS = 10 * 60 * 1000;
 const SOLO_TIME_LIMIT = 5 * 60 * 1000; // 5 minutes time limit to find the bomb word
 const BOT_RESPONSE_DELAY = { min: 1200, max: 3000 };
@@ -503,6 +503,7 @@ export default function ChatBombGame() {
   const [autoReturnCountdown, setAutoReturnCountdown] = useState<number | null>(
     null
   );
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [roundTimeLeft, setRoundTimeLeft] = useState<number | null>(null);
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [pendingGameMode, setPendingGameMode] = useState<"solo" | "multiplayer" | null>(null);
@@ -837,13 +838,28 @@ export default function ChatBombGame() {
 
     if (realtimeChannel) {
       console.info("✅ Subscribed to realtime updates for room", roomId);
+      
+      // Monitor connection status
+      realtimeChannel.subscribe((status, err) => {
+        console.log(`📡 Realtime status for room ${roomId}: ${status}`, err);
+        if (status === 'SUBSCRIBED') {
+          setRealtimeConnected(true);
+          console.info(`✅ Realtime connected for room ${roomId}`);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setRealtimeConnected(false);
+          console.warn(`⚠️ Realtime disconnected for room ${roomId}:`, status, err);
+        }
+      });
+      
       unsubscribeRoomListener.current = {
         unsubscribe: () => {
           realtimeChannel.unsubscribe();
+          setRealtimeConnected(false);
         },
       } as any;
     } else {
       console.warn("⚠️ Realtime unavailable. Falling back to polling every 3s");
+      setRealtimeConnected(false);
       const pollInterval = setInterval(() => {
         fetchSnapshot(false);
       }, 3000);
@@ -1718,6 +1734,7 @@ export default function ChatBombGame() {
             autoReturnCountdown={autoReturnCountdown}
             roundTimeLeft={roundTimeLeft}
             isSoloMode={gameState.sessionType === "solo"}
+            realtimeConnected={realtimeConnected}
             soloStats={gameState.sessionType === "solo" && soloSessionRef.current ? {
               score: soloSessionRef.current.score || 0,
               combo: soloSessionRef.current.combo || 0,

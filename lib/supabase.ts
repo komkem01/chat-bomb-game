@@ -159,7 +159,12 @@ export const subscribeToRoom = (
 
   try {
     const channel = supabase
-      .channel(`room_${roomId}`)
+      .channel(`room_${roomId}`, {
+        config: {
+          broadcast: { self: false },
+          presence: { key: '' },
+        },
+      })
       .on(
         'postgres_changes',
         {
@@ -168,7 +173,10 @@ export const subscribeToRoom = (
           table: 'rooms',
           filter: `room_id=eq.${roomId}`,
         },
-        callback
+        (payload) => {
+          console.log('📡 Room change detected:', payload);
+          callback(payload);
+        }
       )
       .on(
         'postgres_changes',
@@ -178,7 +186,10 @@ export const subscribeToRoom = (
           table: 'messages',
           filter: `room_id=eq.${roomId}`,
         },
-        callback
+        (payload) => {
+          console.log('📡 Message change detected:', payload);
+          callback(payload);
+        }
       )
       .on(
         'postgres_changes',
@@ -188,12 +199,21 @@ export const subscribeToRoom = (
           table: 'room_players',
           filter: `room_id=eq.${roomId}`,
         },
-        callback
+        (payload) => {
+          console.log('📡 Player change detected:', payload);
+          callback(payload);
+        }
       );
 
-    channel.subscribe((status) => {
+    channel.subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
-        console.info(`📡 Realtime sync active for room ${roomId}`);
+        console.info(`✅ Realtime sync active for room ${roomId}`);
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error(`❌ Realtime channel error for room ${roomId}:`, err);
+      } else if (status === 'TIMED_OUT') {
+        console.warn(`⏱️ Realtime subscription timed out for room ${roomId}`);
+      } else {
+        console.log(`📡 Realtime status: ${status}`);
       }
     });
 

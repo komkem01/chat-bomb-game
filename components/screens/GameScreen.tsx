@@ -47,6 +47,7 @@ interface GameScreenProps {
   roundTimeLeft?: number | null;
   isSoloMode?: boolean;
   soloStats?: SoloStats;
+  realtimeConnected?: boolean;
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({
@@ -76,6 +77,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
   roundTimeLeft,
   isSoloMode = false,
   soloStats,
+  realtimeConnected = false,
 }) => {
   const isOwner = roomData.room.owner_id === userId;
   const aliveCount =
@@ -362,6 +364,21 @@ const GameScreen: React.FC<GameScreenProps> = ({
 
         {/* Game status and hint */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Realtime connection indicator for multiplayer */}
+          {!isSoloMode && (
+            <div 
+              className={`px-2 py-1.5 rounded-lg text-xs flex items-center gap-1.5 ${
+                realtimeConnected 
+                  ? 'bg-green-500/10 border border-green-500/30 text-green-400' 
+                  : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
+              }`}
+              title={realtimeConnected ? 'เชื่อมต่อ Realtime แล้ว' : 'ใช้ Polling Mode (อัพเดททุก 3 วินาที)'}
+            >
+              <i className={`fas ${realtimeConnected ? 'fa-wifi' : 'fa-sync-alt'} ${!realtimeConnected && 'animate-spin'}`}></i>
+              <span className="hidden sm:inline">{realtimeConnected ? 'Real-time' : 'Polling'}</span>
+            </div>
+          )}
+          
           <div className="text-xs sm:text-sm text-blue-300 font-medium flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50 backdrop-blur-sm">
             {roomData.room.status === "IDLE" ? (
               <>
