@@ -1,6 +1,7 @@
 import { query } from './db';
 import { HttpError, badRequest, forbidden, notFound } from './errors';
 import { DbMessage, DbPlayer, DbRoom, RoomData, PodiumEntry } from '@/types/game';
+import { MAX_PLAYERS_PER_ROOM } from '@/lib/constants';
 
 const MAX_ROOM_CODE_ATTEMPTS = 7;
 const MAX_MESSAGE_HISTORY = 200;
@@ -73,6 +74,17 @@ export const joinRoomService = async (roomId: string, playerId: string, playerNa
   const playerRow = existingPlayer.rows[0];
   if (playerRow?.is_eliminated) {
     throw forbidden('คุณถูกคัดออกแล้ว กรุณารอรอบถัดไป');
+  }
+
+  if (!playerRow) {
+    const playerCountResult = await query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM room_players WHERE room_id = $1`,
+      [roomId]
+    );
+    const playerCount = playerCountResult.rows[0]?.count ?? 0;
+    if (playerCount >= MAX_PLAYERS_PER_ROOM) {
+      throw forbidden(`ห้องนี้เต็มแล้ว (สูงสุด ${MAX_PLAYERS_PER_ROOM} คน)`);
+    }
   }
 
   await query(

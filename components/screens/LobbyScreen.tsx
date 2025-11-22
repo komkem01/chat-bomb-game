@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { MAX_PLAYERS_PER_ROOM } from '@/lib/constants';
 
 interface LobbyScreenProps {
   playerName: string | null;
@@ -80,7 +81,7 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-2xl border border-slate-700/40 bg-slate-900/40 p-4">
               <p className="text-xs text-slate-400">จำนวนผู้เล่นต่อห้อง</p>
-              <p className="text-2xl font-bold text-white">2 - 12</p>
+              <p className="text-2xl font-bold text-white">2 - {MAX_PLAYERS_PER_ROOM}</p>
               <p className="text-slate-400 text-xs mt-1">เหมาะกับทั้งกลุ่มเล็กและใหญ่</p>
             </div>
             <div className="rounded-2xl border border-slate-700/40 bg-slate-900/40 p-4">

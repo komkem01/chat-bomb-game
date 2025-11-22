@@ -2,6 +2,7 @@
 
 import React, { RefObject } from 'react';
 import { RoomData, DbMessage } from '@/types/game';
+import { MAX_PLAYERS_PER_ROOM } from '@/lib/constants';
 
 interface SoloStats {
   score: number;
@@ -374,7 +375,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700/30 border border-slate-600/30">
             <i className="fas fa-users text-slate-400 text-xs"></i>
             <span className="text-slate-400 text-xs font-semibold">
-              {roomData.players?.length || 0}/30
+              {roomData.players?.length || 0}/{MAX_PLAYERS_PER_ROOM}
             </span>
           </div>
         </div>
