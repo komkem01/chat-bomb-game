@@ -1,7 +1,8 @@
 "use client";
 
 import React, { RefObject } from 'react';
-import { RoomData, DbMessage } from '@/types/game';
+import { RoomData, DbMessage, RelaySession } from '@/types/game';
+import { MAX_PLAYERS_PER_ROOM } from '@/lib/constants';
 
 interface SoloStats {
   score: number;
@@ -48,6 +49,13 @@ interface GameScreenProps {
   isSoloMode?: boolean;
   soloStats?: SoloStats;
   realtimeConnected?: boolean;
+  onOpenRelayModal?: () => void;
+  canRelay?: boolean;
+  isRelayGuest?: boolean;
+  onReturnToOrigin?: () => void;
+  relaySession?: RelaySession | null;
+  onOpenJoinRequests?: () => void;
+  pendingJoinRequestsCount?: number;
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({
@@ -78,6 +86,13 @@ const GameScreen: React.FC<GameScreenProps> = ({
   isSoloMode = false,
   soloStats,
   realtimeConnected = false,
+  onOpenRelayModal,
+  canRelay = false,
+  isRelayGuest = false,
+  onReturnToOrigin,
+  relaySession,
+  onOpenJoinRequests,
+  pendingJoinRequestsCount = 0,
 }) => {
   const realtimeStatusMeta = realtimeConnected
     ? {
@@ -111,6 +126,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
     hasStartedGame &&
     podiumEntries.length > 0;
   const totalPlayers = roomData.players?.length || 0;
+  const displayRoomCode = roomData.room.room_code || roomId;
   const dangerPercentage =
     totalPlayers > 0 ? Math.round((deadCount / totalPlayers) * 100) : 0;
   const allowOwnerControls = isOwner && !isSoloMode;
@@ -273,7 +289,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           <div className="flex flex-col">
             <span className="text-[10px] sm:text-xs text-blue-400 uppercase tracking-wider font-bold flex items-center gap-1">
               <i className={`fas ${isSoloMode ? 'fa-user-ninja' : 'fa-key'} text-[8px]`}></i>
-              {isSoloMode ? 'Solo Mode' : 'Room ID'}
+              {isSoloMode ? 'Solo Mode' : 'Room Code'}
             </span>
             {isSoloMode ? (
               <span className="font-mono text-base sm:text-lg text-purple-300 font-bold">
@@ -285,7 +301,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 onClick={onCopyRoomCode}
               >
                 <span className="font-mono text-base sm:text-lg text-blue-400 font-bold group-hover:text-blue-300 transition-colors">
-                  {roomId}
+                  {displayRoomCode}
                 </span>
                 <i className="far fa-copy text-xs text-slate-500 group-hover:text-blue-400 transition-colors"></i>
               </div>
@@ -324,11 +340,43 @@ const GameScreen: React.FC<GameScreenProps> = ({
           </div>
           {allowOwnerControls && (
             <button
+              onClick={onOpenJoinRequests}
+              className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-green-600/20 to-emerald-500/20 text-emerald-200 text-xs sm:text-sm font-semibold border border-emerald-400/40 hover:border-emerald-300/60 transition-all flex items-center gap-2 relative"
+            >
+              <i className="fas fa-user-clock"></i>
+              <span className="hidden sm:inline">คำขอเข้าร่วม</span>
+              {pendingJoinRequestsCount > 0 && (
+                <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingJoinRequestsCount}
+                </span>
+              )}
+            </button>
+          )}
+          {allowOwnerControls && (
+            <button
               onClick={onOpenConfirmModal}
               className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-xs sm:text-sm font-semibold transition-all border border-red-500/30 hover:border-red-500/50 flex items-center gap-2"
             >
               <i className="fas fa-power-off"></i>
               <span className="hidden sm:inline">ปิดห้อง</span>
+            </button>
+          )}
+          {isRelayGuest && onReturnToOrigin && relaySession && (
+            <button
+              onClick={onReturnToOrigin}
+              className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-200 text-xs sm:text-sm font-semibold border border-amber-400/40 hover:border-amber-300/60 transition-all flex items-center gap-2"
+            >
+              <i className="fas fa-home"></i>
+              <span className="hidden sm:inline">กลับห้อง {relaySession.originRoomId}</span>
+            </button>
+          )}
+          {!isRelayGuest && onOpenRelayModal && canRelay && (
+            <button
+              onClick={onOpenRelayModal}
+              className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-blue-600/20 to-cyan-500/20 text-blue-200 text-xs sm:text-sm font-semibold border border-blue-400/40 hover:border-blue-300/60 transition-all flex items-center gap-2"
+            >
+              <i className="fas fa-globe"></i>
+              <span className="hidden sm:inline">ออกล่าข้ามห้อง</span>
             </button>
           )}
         </div>
@@ -374,7 +422,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700/30 border border-slate-600/30">
             <i className="fas fa-users text-slate-400 text-xs"></i>
             <span className="text-slate-400 text-xs font-semibold">
-              {roomData.players?.length || 0}/30
+              {roomData.players?.length || 0}/{MAX_PLAYERS_PER_ROOM}
             </span>
           </div>
         </div>
@@ -395,6 +443,15 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 <span className="text-[10px] text-white/80">
                   {realtimeStatusMeta.description}
                 </span>
+              </div>
+            </div>
+          )}
+          {isRelayGuest && relaySession && (
+            <div className="px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-400/30 text-purple-100 text-xs flex items-center gap-2 shadow-md">
+              <i className="fas fa-user-astronaut"></i>
+              <div className="flex flex-col leading-tight">
+                <span className="font-semibold">Guest Relay</span>
+                <span className="text-[10px] text-purple-100/70">จากห้อง {relaySession.originRoomId}</span>
               </div>
             </div>
           )}

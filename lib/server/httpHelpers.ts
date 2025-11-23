@@ -27,6 +27,8 @@ export const handleErrorResponse = (error: unknown) => {
   }
 
   console.error('Unhandled API error:', error);
+  console.error('Error stack:', (error as any)?.stack);
+  console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
   return NextResponse.json(
     { error: 'เกิดข้อผิดพลาดภายในระบบ' }, 
     { 

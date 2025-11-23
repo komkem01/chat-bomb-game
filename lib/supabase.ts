@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Database } from '@/types/database';
-import { RoomData } from '@/types/game';
+import { RoomData, RelayRoomSummary, RelaySession, PublicRoomSummary, RoomJoinRequest } from '@/types/game';
 
 // Supabase configuration (injected at build time for browser use)
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,6 +15,8 @@ if (typeof window !== 'undefined' && !hasSupabaseConfig) {
 
 let supabase: SupabaseClient<Database> | null = null;
 let currentUserId: string | null = null;
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<Database> | null; userId: string }> => {
   // Initialize Supabase client once per application lifecycle
@@ -41,7 +43,7 @@ export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<D
   // Reuse persisted anonymous user id so server-side ownership checks keep working after refresh
   if (typeof window !== 'undefined') {
     const storedId = window.localStorage.getItem('chat_bomb_user_id');
-    if (storedId) {
+    if (storedId && UUID_REGEX.test(storedId)) {
       currentUserId = storedId;
     } else {
       currentUserId = generateUserId();
@@ -55,7 +57,16 @@ export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<D
 };
 
 const generateUserId = (): string => {
-  return 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+  return template.replace(/[xy]/g, (char) => {
+    const random = (Math.random() * 16) | 0;
+    const value = char === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
 };
 
 type ApiResponse<T> = { data: T };
@@ -228,6 +239,98 @@ export const resetGame = async (roomId: string, ownerId: string) => {
   return apiFetch<RoomData>(`/api/rooms/${roomId}/reset`, {
     method: 'POST',
     body: JSON.stringify({ ownerId }),
+  });
+};
+
+interface RelayJoinResponse {
+  session: RelaySession;
+  roomData: RoomData;
+}
+
+interface RelayReturnResponse {
+  originRoomId: string;
+  roomData: RoomData;
+}
+
+export const fetchRelayRooms = async (originRoomId: string, playerId: string) => {
+  const params = new URLSearchParams({ originRoomId, playerId });
+  const response = await apiFetch<{ rooms: RelayRoomSummary[] }>(`/api/relay/rooms?${params.toString()}`);
+  return response.rooms;
+};
+
+export const requestRelayMatch = async (playerId: string, playerName: string, originRoomId: string) => {
+  return apiFetch<RelayJoinResponse>('/api/relay/match', {
+    method: 'POST',
+    body: JSON.stringify({ playerId, playerName, originRoomId }),
+  });
+};
+
+export const joinRelayRoom = async (
+  playerId: string,
+  playerName: string,
+  originRoomId: string,
+  targetRoomId: string
+) => {
+  return apiFetch<RelayJoinResponse>('/api/relay/join', {
+    method: 'POST',
+    body: JSON.stringify({ playerId, playerName, originRoomId, targetRoomId }),
+  });
+};
+
+export const returnRelayRoom = async (sessionId: string, playerId: string) => {
+  return apiFetch<RelayReturnResponse>('/api/relay/return', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, playerId }),
+  });
+};
+
+export const fetchPublicRooms = async (playerId?: string) => {
+  const params = new URLSearchParams();
+  if (playerId) {
+    params.set('playerId', playerId);
+  }
+  const queryString = params.toString();
+  const response = await apiFetch<{ rooms: PublicRoomSummary[] }>(
+    `/api/rooms/public${queryString ? `?${queryString}` : ''}`
+  );
+  return response.rooms;
+};
+
+export const requestRoomJoin = async (roomId: string, playerId: string, playerName: string) => {
+  return apiFetch<RoomJoinRequest>('/api/rooms/join/request', {
+    method: 'POST',
+    body: JSON.stringify({ roomId, playerId, playerName }),
+  });
+};
+
+export const fetchMyJoinRequests = async (playerId: string) => {
+  const response = await apiFetch<{ requests: RoomJoinRequest[] }>(
+    `/api/rooms/join/status?playerId=${playerId}`
+  );
+  return response.requests;
+};
+
+export const fetchOwnerJoinRequests = async (roomId: string, ownerId: string) => {
+  const response = await apiFetch<{ requests: RoomJoinRequest[] }>(
+    `/api/rooms/${roomId}/join-requests?ownerId=${ownerId}`
+  );
+  return response.requests;
+};
+
+export const respondToJoinRequest = async (
+  requestId: string,
+  ownerId: string,
+  decision: 'APPROVE' | 'DENY'
+) => {
+  return apiFetch<RoomJoinRequest>(`/api/rooms/join/requests/${requestId}`, {
+    method: 'POST',
+    body: JSON.stringify({ ownerId, decision }),
+  });
+};
+
+export const cancelJoinRequest = async (requestId: string) => {
+  return apiFetch<RoomJoinRequest>(`/api/rooms/join/requests/${requestId}`, {
+    method: 'DELETE',
   });
 };
 
