@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { query, withTransaction } from './db';
 import { HttpError, badRequest, forbidden, notFound, conflict } from './errors';
 import {
@@ -10,18 +11,14 @@ import {
   RelaySession,
   PublicRoomSummary,
   RoomJoinRequest,
-} from '@/types/game';
-import {
-  MAX_PLAYERS_PER_ROOM,
-  MAX_RELAY_ROOM_RESULTS,
-  RELAY_SESSION_PREFIX,
-  JOIN_REQUEST_TIMEOUT_SECONDS,
-} from '@/lib/constants';
+} from '../../types/game';
+import { MAX_PLAYERS_PER_ROOM, MAX_RELAY_ROOM_RESULTS, JOIN_REQUEST_TIMEOUT_SECONDS } from '../constants';
 
 const MAX_ROOM_CODE_ATTEMPTS = 7;
 const MAX_MESSAGE_HISTORY = 200;
 const PODIUM_POINTS = [5, 3, 1];
 const ROUND_DURATION_MS = 10 * 60 * 1000;
+const AUTO_CLOSE_THRESHOLD_MINUTES = 60;
 
 const expirePendingRequestsForPlayer = async (playerId: string) => {
   await query(
@@ -49,11 +46,44 @@ const expirePendingRequestsForRoom = async (roomId: string) => {
 
 const normalize = (text: string) => text.trim().toLowerCase();
 
+const ROOM_CODE_REGEX = /^[0-9]{6}$/;
 const generateRoomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+const isRoomCode = (value: string) => ROOM_CODE_REGEX.test(value);
+
+const getRoomById = async (roomId: string): Promise<DbRoom> => {
+  const result = await query<DbRoom>(`SELECT * FROM rooms WHERE room_id = $1`, [roomId]);
+  const room = result.rows[0];
+  if (!room) {
+    throw notFound('ไม่พบห้องที่ระบุ');
+  }
+  return room;
+};
+
+const getRoomByCode = async (roomCode: string): Promise<DbRoom> => {
+  const result = await query<DbRoom>(`SELECT * FROM rooms WHERE room_code = $1`, [roomCode]);
+  const room = result.rows[0];
+  if (!room) {
+    throw notFound('ไม่พบห้องที่ระบุ');
+  }
+  return room;
+};
+
+const getRoomByIdentifier = async (identifier: string): Promise<DbRoom> => {
+  if (isRoomCode(identifier)) {
+    return getRoomByCode(identifier);
+  }
+  return getRoomById(identifier);
+};
+
+const resolveRoomId = async (identifier: string): Promise<string> => {
+  const room = await getRoomByIdentifier(identifier);
+  return room.room_id;
+};
 
 const mapJoinRequestRow = (row: any): RoomJoinRequest => ({
   id: row.id,
   roomId: row.room_id,
+  roomCode: row.room_code,
   playerId: row.player_id,
   playerName: row.player_name,
   status: row.status,
@@ -64,30 +94,31 @@ const mapJoinRequestRow = (row: any): RoomJoinRequest => ({
 export const createRoomService = async (
   ownerId: string,
   ownerName: string,
-  preferredRoomId?: string
+  preferredRoomCode?: string
 ): Promise<RoomData> => {
   const attemptedCodes = new Set<string>();
   let attempts = 0;
 
   while (attempts < MAX_ROOM_CODE_ATTEMPTS) {
-    const roomCode = attempts === 0 && preferredRoomId ? preferredRoomId : generateUniqueCode(attemptedCodes);
+    const roomCode = attempts === 0 && preferredRoomCode ? preferredRoomCode : generateUniqueCode(attemptedCodes);
     attemptedCodes.add(roomCode);
     try {
       const roomResult = await query<DbRoom>(
-        `INSERT INTO rooms (room_id, owner_id, status)
+        `INSERT INTO rooms (room_code, owner_id, status)
          VALUES ($1, $2, 'IDLE')
          RETURNING *`,
         [roomCode, ownerId]
       );
+      const createdRoom = roomResult.rows[0];
 
       await query(
         `INSERT INTO room_players (room_id, player_id, player_name, is_eliminated)
          VALUES ($1, $2, $3, FALSE)
          ON CONFLICT (room_id, player_id) DO UPDATE SET player_name = EXCLUDED.player_name`,
-        [roomCode, ownerId, ownerName]
+        [createdRoom.room_id, ownerId, ownerName]
       );
 
-      return getRoomDataService(roomCode);
+      return getRoomDataService(createdRoom.room_id);
     } catch (error: any) {
       if (error.code === '23505') {
         attempts += 1;
@@ -108,16 +139,18 @@ const generateUniqueCode = (used: Set<string>) => {
   return code;
 };
 
-export const joinRoomService = async (roomId: string, playerId: string, playerName: string): Promise<RoomData> => {
-  const room = await getRoomByCode(roomId);
+export const joinRoomService = async (roomIdentifier: string, playerId: string, playerName: string): Promise<RoomData> => {
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
 
   if (room.status === 'CLOSED') {
     throw forbidden('ห้องนี้ถูกปิดแล้ว');
   }
 
+  // ตรวจสอบว่าผู้เล่นมีอยู่ในห้องแล้วหรือไม่
   const existingPlayer = await query<DbPlayer>(
     `SELECT * FROM room_players WHERE room_id = $1 AND player_id = $2`,
-    [roomId, playerId]
+    [dbRoomId, playerId]
   );
 
   const playerRow = existingPlayer.rows[0];
@@ -125,10 +158,28 @@ export const joinRoomService = async (roomId: string, playerId: string, playerNa
     throw forbidden('คุณถูกคัดออกแล้ว กรุณารอรอบถัดไป');
   }
 
+  // ถ้ายังไม่เคยเข้าห้อง → ตรวจสอบ approval (บังคับสำหรับทุกคนยกเว้น owner)
   if (!playerRow) {
+    // ตรวจสอบว่าเป็น owner หรือไม่
+    if (room.owner_id !== playerId) {
+      // ไม่ใช่ owner → ต้องมี approved request เท่านั้น
+      const approvedRequest = await query<RoomJoinRequest>(
+        `SELECT * FROM room_join_requests
+         WHERE room_id = $1 AND player_id = $2 AND status = 'APPROVED'
+         ORDER BY resolved_at DESC
+         LIMIT 1`,
+        [dbRoomId, playerId]
+      );
+
+      if (approvedRequest.rows.length === 0) {
+        throw forbidden('คุณต้องได้รับอนุมัติจากเจ้าของห้องก่อน');
+      }
+    }
+
+    // ตรวจสอบจำนวนผู้เล่น
     const playerCountResult = await query<{ count: number }>(
       `SELECT COUNT(*)::int AS count FROM room_players WHERE room_id = $1`,
-      [roomId]
+      [dbRoomId]
     );
     const playerCount = playerCountResult.rows[0]?.count ?? 0;
     if (playerCount >= MAX_PLAYERS_PER_ROOM) {
@@ -141,15 +192,23 @@ export const joinRoomService = async (roomId: string, playerId: string, playerNa
      VALUES ($1, $2, $3, FALSE)
      ON CONFLICT (room_id, player_id)
      DO UPDATE SET player_name = EXCLUDED.player_name`,
-    [roomId, playerId, playerName]
+    [dbRoomId, playerId, playerName]
   );
 
-  return getRoomDataService(roomId);
+  // ลบ approved request หลังจาก join สำเร็จ (ไม่ให้ค้าง)
+  await query(
+    `DELETE FROM room_join_requests
+     WHERE room_id = $1 AND player_id = $2 AND status = 'APPROVED'`,
+    [dbRoomId, playerId]
+  );
+
+  return getRoomDataService(dbRoomId);
 };
 
-export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
+export const getRoomDataService = async (roomIdentifier: string): Promise<RoomData> => {
   try {
-    let room = await getRoomByCode(roomId);
+    let room = await getRoomByIdentifier(roomIdentifier);
+    const dbRoomId = room.room_id;
     room = await enforceRoundTimer(room);
 
     const [playersResult, messagesResult] = await Promise.all([
@@ -157,7 +216,7 @@ export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
         `SELECT * FROM room_players
          WHERE room_id = $1
          ORDER BY joined_at ASC`,
-        [roomId]
+        [dbRoomId]
       ),
       query<DbMessage>(
         `SELECT *
@@ -169,17 +228,17 @@ export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
               LIMIT $2
            ) recent_messages
           ORDER BY created_at ASC`,
-        [roomId, MAX_MESSAGE_HISTORY]
+        [dbRoomId, MAX_MESSAGE_HISTORY]
       ),
     ]);
 
-    const podium = room.status === 'CLOSED' ? await getPodiumForRoom(roomId, playersResult.rows) : undefined;
+    const podium = room.status === 'CLOSED' ? await getPodiumForRoom(dbRoomId, playersResult.rows) : undefined;
 
     const pendingRequestsResult = await query<{ count: number }>(
       `SELECT COUNT(*)::int AS count
          FROM room_join_requests
         WHERE room_id = $1 AND status = 'PENDING'`,
-      [roomId]
+      [dbRoomId]
     );
 
     return {
@@ -190,13 +249,13 @@ export const getRoomDataService = async (roomId: string): Promise<RoomData> => {
       pendingRequestsCount: pendingRequestsResult.rows[0]?.count ?? 0,
     };
   } catch (error) {
-    console.error(`Error getting room data for ${roomId}:`, error);
+    console.error(`Error getting room data for ${roomIdentifier}:`, error);
     throw error;
   }
 };
 
 export const updateRoomSettingsService = async (
-  roomId: string,
+  roomIdentifier: string,
   setterId: string,
   setterName: string,
   bombWord: string,
@@ -206,7 +265,8 @@ export const updateRoomSettingsService = async (
     throw badRequest('กรุณาระบุคำกับดัก');
   }
 
-  const room = await getRoomByCode(roomId);
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
   if (room.owner_id !== setterId) {
     throw forbidden('เฉพาะเจ้าของห้องเท่านั้นที่ตั้งค่าได้');
   }
@@ -221,14 +281,14 @@ export const updateRoomSettingsService = async (
          round_started_at = NOW(),
          updated_at = NOW()
      WHERE room_id = $1`,
-    [roomId, normalize(bombWord), hint || null, setterId, setterName]
+    [dbRoomId, normalize(bombWord), hint || null, setterId, setterName]
   );
 
-  return getRoomDataService(roomId);
+  return getRoomDataService(dbRoomId);
 };
 
 export const sendMessageService = async (
-  roomId: string,
+  roomIdentifier: string,
   senderId: string,
   senderName: string,
   text: string
@@ -237,14 +297,15 @@ export const sendMessageService = async (
     throw badRequest('ข้อความว่างเปล่า');
   }
 
-  const room = await getRoomByCode(roomId);
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
   if (room.status !== 'PLAYING') {
     throw badRequest('ยังไม่ได้เริ่มรอบ');
   }
 
   const playerResult = await query<DbPlayer>(
     `SELECT * FROM room_players WHERE room_id = $1 AND player_id = $2`,
-    [roomId, senderId]
+    [dbRoomId, senderId]
   );
   const player = playerResult.rows[0];
   if (!player) {
@@ -264,7 +325,7 @@ export const sendMessageService = async (
       WHERE room_id = $1
         AND LOWER(TRIM(message_text)) = $2
       LIMIT 1`,
-    [roomId, normalizedText]
+    [dbRoomId, normalizedText]
   );
   const isDuplicate = duplicateResult.rows.length > 0;
   const shouldEliminate = isBoom || isDuplicate;
@@ -272,21 +333,22 @@ export const sendMessageService = async (
   await query(
     `INSERT INTO messages (room_id, sender_id, sender_name, message_text, is_boom)
      VALUES ($1, $2, $3, $4, $5)`
-    , [roomId, senderId, senderName, text, shouldEliminate]
+    , [dbRoomId, senderId, senderName, text, shouldEliminate]
   );
 
   if (shouldEliminate) {
     await query(
       `UPDATE room_players SET is_eliminated = TRUE WHERE room_id = $1 AND player_id = $2`,
-      [roomId, senderId]
+      [dbRoomId, senderId]
     );
   }
 
-  return getRoomDataService(roomId);
+  return getRoomDataService(dbRoomId);
 };
 
-export const closeRoomService = async (roomId: string, ownerId: string): Promise<RoomData> => {
-  const room = await getRoomByCode(roomId);
+export const closeRoomService = async (roomIdentifier: string, ownerId: string): Promise<RoomData> => {
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
   if (room.owner_id !== ownerId) {
     throw forbidden('เฉพาะเจ้าของห้องเท่านั้นที่ปิดห้องได้');
   }
@@ -297,13 +359,21 @@ export const closeRoomService = async (roomId: string, ownerId: string): Promise
             round_started_at = NULL,
             updated_at = NOW()
       WHERE room_id = $1`,
-    [roomId]
+    [dbRoomId]
   );
-  return getRoomDataService(roomId);
+
+  // ลบ join requests ทั้งหมดเมื่อห้องปิด
+  await query(
+    `DELETE FROM room_join_requests WHERE room_id = $1`,
+    [dbRoomId]
+  );
+
+  return getRoomDataService(dbRoomId);
 };
 
-export const resetRoomService = async (roomId: string, ownerId: string): Promise<RoomData> => {
-  const room = await getRoomByCode(roomId);
+export const resetRoomService = async (roomIdentifier: string, ownerId: string): Promise<RoomData> => {
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
   if (room.owner_id !== ownerId) {
     throw forbidden('เฉพาะเจ้าของห้องเท่านั้นที่รีเซ็ตได้');
   }
@@ -318,12 +388,39 @@ export const resetRoomService = async (roomId: string, ownerId: string): Promise
          round_started_at = NULL,
          updated_at = NOW()
      WHERE room_id = $1`,
-    [roomId]
+    [dbRoomId]
   );
-  await query(`DELETE FROM messages WHERE room_id = $1`, [roomId]);
-  await query(`UPDATE room_players SET is_eliminated = FALSE WHERE room_id = $1`, [roomId]);
+  await query(`DELETE FROM messages WHERE room_id = $1`, [dbRoomId]);
+  await query(`UPDATE room_players SET is_eliminated = FALSE WHERE room_id = $1`, [dbRoomId]);
 
-  return getRoomDataService(roomId);
+  return getRoomDataService(dbRoomId);
+};
+
+const autoCloseStaleRooms = async () => {
+  const result = await query<{ room_id: string }>(
+    `UPDATE rooms
+        SET status = 'CLOSED',
+            round_started_at = NULL,
+            updated_at = NOW()
+      WHERE status IN ('IDLE', 'PLAYING')
+        AND updated_at <= NOW() - ($1 * INTERVAL '1 minute')
+      RETURNING room_id`,
+    [AUTO_CLOSE_THRESHOLD_MINUTES]
+  );
+
+  // ลบ join requests ของห้องที่ auto-close
+  if (result.rows.length > 0) {
+    const closedRoomIds = result.rows.map(r => r.room_id);
+    await query(
+      `DELETE FROM room_join_requests WHERE room_id = ANY($1::uuid[])`,
+      [closedRoomIds]
+    );
+  }
+
+  return {
+    closedCount: result.rowCount ?? 0,
+    roomIds: result.rows.map((row) => row.room_id),
+  };
 };
 
 export const cleanupClosedRoomsService = async (gracePeriodDays = 1) => {
@@ -332,6 +429,8 @@ export const cleanupClosedRoomsService = async (gracePeriodDays = 1) => {
   if (!Number.isFinite(numericDays) || numericDays < 0) {
     throw badRequest('ระยะเวลาต้องเป็นจำนวนวันที่มากกว่าหรือเท่ากับ 0');
   }
+
+  const autoCloseResult = await autoCloseStaleRooms();
 
   const result = await query<{ rooms_deleted: string | number }>(
     `WITH deleted AS (
@@ -347,6 +446,7 @@ export const cleanupClosedRoomsService = async (gracePeriodDays = 1) => {
   const roomsDeleted = Number(result.rows[0]?.rooms_deleted ?? 0);
 
   return {
+    staleRoomsClosed: autoCloseResult.closedCount,
     roomsDeleted,
     daysThreshold: numericDays,
     deletedAt: new Date().toISOString(),
@@ -360,6 +460,7 @@ export const listActiveRoomsService = async (playerId?: string): Promise<PublicR
 
   const result = await query<{
     room_id: string;
+    room_code: string;
     status: DbRoom['status'];
     player_count: number;
     hint: string | null;
@@ -368,31 +469,32 @@ export const listActiveRoomsService = async (playerId?: string): Promise<PublicR
     has_pending_request: boolean;
     is_member: boolean;
   }>(
-    `SELECT
+  `SELECT
         r.room_id,
+    r.room_code,
         r.status,
         COALESCE(pc.player_count, 0) AS player_count,
         r.hint,
         r.setter_name,
         owner.player_name AS owner_name,
         CASE
-          WHEN $1::text IS NULL THEN FALSE
+          WHEN $1::uuid IS NULL THEN FALSE
           ELSE EXISTS (
             SELECT 1
               FROM room_join_requests rjr
              WHERE rjr.room_id = r.room_id
-               AND rjr.player_id = $1
+               AND rjr.player_id = $1::uuid
                AND rjr.status = 'PENDING'
                AND rjr.created_at > NOW() - ($2 * INTERVAL '1 second')
           )
         END AS has_pending_request,
         CASE
-          WHEN $1::text IS NULL THEN FALSE
+          WHEN $1::uuid IS NULL THEN FALSE
           ELSE EXISTS (
             SELECT 1
               FROM room_players rp
              WHERE rp.room_id = r.room_id
-               AND rp.player_id = $1
+               AND rp.player_id = $1::uuid
           )
         END AS is_member
       FROM rooms r
@@ -409,6 +511,7 @@ export const listActiveRoomsService = async (playerId?: string): Promise<PublicR
 
   return result.rows.map((row) => ({
     roomId: row.room_id,
+    roomCode: row.room_code,
     status: row.status,
     playerCount: row.player_count,
     maxPlayers: MAX_PLAYERS_PER_ROOM,
@@ -421,11 +524,12 @@ export const listActiveRoomsService = async (playerId?: string): Promise<PublicR
 };
 
 export const requestRoomAccessService = async (
-  roomId: string,
+  roomIdentifier: string,
   playerId: string,
   playerName: string
 ): Promise<RoomJoinRequest> => {
-  const room = await getRoomByCode(roomId);
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
 
   if (room.status === 'CLOSED') {
     throw forbidden('ห้องนี้ปิดไปแล้ว');
@@ -437,7 +541,7 @@ export const requestRoomAccessService = async (
 
   const memberResult = await query<DbPlayer>(
     `SELECT * FROM room_players WHERE room_id = $1 AND player_id = $2`,
-    [roomId, playerId]
+    [dbRoomId, playerId]
   );
   if (memberResult.rows.length > 0) {
     throw conflict('คุณอยู่ในห้องนี้แล้ว');
@@ -456,7 +560,7 @@ export const requestRoomAccessService = async (
 
   if (pendingResult.rows.length > 0) {
     const existingRoomId = pendingResult.rows[0].room_id;
-    if (existingRoomId === roomId) {
+    if (existingRoomId === dbRoomId) {
       throw conflict('คุณได้ส่งคำขอไปยังห้องนี้แล้ว โปรดรอการอนุมัติ');
     }
     throw conflict('คุณมีคำขอรออนุมัติอยู่แล้ว โปรดรอ 1 นาทีหรือจนกว่าจะมีคำตอบ');
@@ -467,8 +571,9 @@ export const requestRoomAccessService = async (
      VALUES ($1, $2, $3, 'PENDING', NOW(), NULL)
      ON CONFLICT (room_id, player_id)
      DO UPDATE SET status = 'PENDING', player_name = EXCLUDED.player_name, created_at = NOW(), resolved_at = NULL
-     RETURNING *`,
-    [roomId, playerId, playerName]
+     RETURNING *,
+               (SELECT room_code FROM rooms WHERE rooms.room_id = room_join_requests.room_id) AS room_code`,
+    [dbRoomId, playerId, playerName]
   );
 
   return mapJoinRequestRow(insertResult.rows[0]);
@@ -478,10 +583,11 @@ export const getPlayerJoinRequestsService = async (playerId: string): Promise<Ro
   await expirePendingRequestsForPlayer(playerId);
 
   const result = await query(
-    `SELECT *
-       FROM room_join_requests
-      WHERE player_id = $1
-      ORDER BY created_at DESC
+    `SELECT rjr.*, rooms.room_code
+       FROM room_join_requests rjr
+       JOIN rooms ON rooms.room_id = rjr.room_id
+      WHERE rjr.player_id = $1
+      ORDER BY rjr.created_at DESC
       LIMIT 50`,
     [playerId]
   );
@@ -489,35 +595,37 @@ export const getPlayerJoinRequestsService = async (playerId: string): Promise<Ro
 };
 
 export const getOwnerJoinRequestsService = async (
-  roomId: string,
+  roomIdentifier: string,
   ownerId: string
 ): Promise<RoomJoinRequest[]> => {
-  const room = await getRoomByCode(roomId);
+  const room = await getRoomByIdentifier(roomIdentifier);
+  const dbRoomId = room.room_id;
   if (room.owner_id !== ownerId) {
     throw forbidden('เฉพาะเจ้าของห้องเท่านั้นที่ดูคำขอได้');
   }
 
-  await expirePendingRequestsForRoom(roomId);
+  await expirePendingRequestsForRoom(dbRoomId);
 
   const result = await query(
-    `SELECT *
-       FROM room_join_requests
-      WHERE room_id = $1 AND status = 'PENDING'
-        AND created_at > NOW() - ($2 * INTERVAL '1 second')
-      ORDER BY created_at ASC`,
-    [roomId, JOIN_REQUEST_TIMEOUT_SECONDS]
+    `SELECT rjr.*, rooms.room_code
+       FROM room_join_requests rjr
+       JOIN rooms ON rooms.room_id = rjr.room_id
+      WHERE rjr.room_id = $1 AND rjr.status = 'PENDING'
+        AND rjr.created_at > NOW() - ($2 * INTERVAL '1 second')
+      ORDER BY rjr.created_at ASC`,
+    [dbRoomId, JOIN_REQUEST_TIMEOUT_SECONDS]
   );
 
   return result.rows.map(mapJoinRequestRow);
 };
 
 export const respondJoinRequestService = async (
-  requestId: number,
+  requestId: string,
   ownerId: string,
   decision: 'APPROVE' | 'DENY'
 ): Promise<RoomJoinRequest> => {
   const requestResult = await query(
-    `SELECT rjr.*, rooms.owner_id
+    `SELECT rjr.*, rooms.owner_id, rooms.room_code
        FROM room_join_requests rjr
        JOIN rooms ON rooms.room_id = rjr.room_id
       WHERE rjr.id = $1`,
@@ -535,18 +643,21 @@ export const respondJoinRequestService = async (
     throw conflict('คำขอนี้ถูกจัดการไปแล้ว');
   }
 
-  if (decision === 'APPROVE') {
-    await joinRoomService(request.room_id, request.player_id, request.player_name);
-  }
-
+  // อนุมัติ request ก่อน แล้วค่อย join (เพราะ joinRoomService ต้องเช็ค approved request)
   const updatedResult = await query(
     `UPDATE room_join_requests
         SET status = $2,
             resolved_at = NOW()
       WHERE id = $1
-      RETURNING *`,
+      RETURNING *,
+                (SELECT room_code FROM rooms WHERE rooms.room_id = room_join_requests.room_id) AS room_code`,
     [requestId, decision === 'APPROVE' ? 'APPROVED' : 'DENIED']
   );
+
+  // ถ้าอนุมัติ ให้ join ห้องทันที (ตอนนี้มี approved request แล้ว)
+  if (decision === 'APPROVE') {
+    await joinRoomService(request.room_id, request.player_id, request.player_name);
+  }
 
   return mapJoinRequestRow(updatedResult.rows[0]);
 };
@@ -559,10 +670,7 @@ interface CreateRelaySessionParams {
   role?: string;
 }
 
-const generateRelaySessionId = () =>
-  `${RELAY_SESSION_PREFIX}${Math.random().toString(36).slice(2, 8)}${Date.now()
-    .toString(36)
-    .slice(-6)}`;
+const generateRelaySessionId = () => randomUUID();
 
 const assertPlayerInRoom = async (roomId: string, playerId: string) => {
   const result = await query<DbPlayer>(
@@ -649,16 +757,19 @@ export const getAvailableRelayRoomsService = async (
   playerId: string,
   originRoomId: string
 ): Promise<RelayRoomSummary[]> => {
-  await assertPlayerInRoom(originRoomId, playerId);
+  const originRoomUuid = await resolveRoomId(originRoomId);
+  await assertPlayerInRoom(originRoomUuid, playerId);
 
   const result = await query<{
     room_id: string;
+    room_code: string;
     status: DbRoom['status'];
     player_count: number;
     hint: string | null;
     setter_name: string | null;
   }>(
     `SELECT r.room_id,
+            r.room_code,
             r.status,
             r.hint,
             r.setter_name,
@@ -671,11 +782,12 @@ export const getAvailableRelayRoomsService = async (
      HAVING COUNT(rp.player_id) < $2
       ORDER BY (r.status = 'PLAYING') DESC, r.updated_at DESC
       LIMIT $3`,
-    [originRoomId, MAX_PLAYERS_PER_ROOM, MAX_RELAY_ROOM_RESULTS]
+    [originRoomUuid, MAX_PLAYERS_PER_ROOM, MAX_RELAY_ROOM_RESULTS]
   );
 
   return result.rows.map((row) => ({
     roomId: row.room_id,
+    roomCode: row.room_code,
     status: row.status,
     playerCount: row.player_count,
     hint: row.hint,
@@ -688,7 +800,8 @@ export const matchRelayRoomService = async (
   playerName: string,
   originRoomId: string
 ): Promise<RelayJoinResult> => {
-  await assertPlayerInRoom(originRoomId, playerId);
+  const originRoomUuid = await resolveRoomId(originRoomId);
+  await assertPlayerInRoom(originRoomUuid, playerId);
   await assertNoActiveRelaySession(playerId);
 
   const targetResult = await query<{ room_id: string }>(
@@ -701,7 +814,7 @@ export const matchRelayRoomService = async (
      HAVING COUNT(rp.player_id) < $2
    ORDER BY RANDOM()
       LIMIT 1`,
-    [originRoomId, MAX_PLAYERS_PER_ROOM]
+    [originRoomUuid, MAX_PLAYERS_PER_ROOM]
   );
 
   const target = targetResult.rows[0];
@@ -710,7 +823,7 @@ export const matchRelayRoomService = async (
   }
 
   return createRelaySession({
-    originRoomId,
+    originRoomId: originRoomUuid,
     targetRoomId: target.room_id,
     playerId,
     playerName,
@@ -727,13 +840,20 @@ export const joinRelayRoomService = async (
     throw badRequest('ไม่สามารถเข้าห้องเดิมได้');
   }
 
-  await assertPlayerInRoom(originRoomId, playerId);
+  const originRoomUuid = await resolveRoomId(originRoomId);
+  const targetRoomUuid = await resolveRoomId(targetRoomId);
+
+  if (originRoomUuid === targetRoomUuid) {
+    throw badRequest('ไม่สามารถเข้าห้องเดิมได้');
+  }
+
+  await assertPlayerInRoom(originRoomUuid, playerId);
   await assertNoActiveRelaySession(playerId);
-  await ensureRoomHasCapacity(targetRoomId);
+  await ensureRoomHasCapacity(targetRoomUuid);
 
   return createRelaySession({
-    originRoomId,
-    targetRoomId,
+    originRoomId: originRoomUuid,
+    targetRoomId: targetRoomUuid,
     playerId,
     playerName,
   });
@@ -841,15 +961,6 @@ const enforceRoundTimer = async (room: DbRoom): Promise<DbRoom> => {
   }
 
   return updatedRoom;
-};
-
-const getRoomByCode = async (roomId: string): Promise<DbRoom> => {
-  const result = await query<DbRoom>(`SELECT * FROM rooms WHERE room_id = $1`, [roomId]);
-  const room = result.rows[0];
-  if (!room) {
-    throw notFound('ไม่พบห้องที่ระบุ');
-  }
-  return room;
 };
 
 const getPodiumForRoom = async (roomId: string, players: DbPlayer[]): Promise<PodiumEntry[]> => {

@@ -109,10 +109,11 @@ const RelayModal: React.FC<RelayModalProps> = ({
                   key={room.roomId}
                   className="rounded-3xl border border-slate-800/60 bg-gradient-to-br from-slate-900/70 to-slate-900 p-4 shadow-lg flex flex-col gap-4"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-xs uppercase tracking-widest text-slate-500">Room ID</p>
-                      <p className="font-mono text-lg text-blue-300 font-semibold">{room.roomId}</p>
+                      <p className="text-xs uppercase tracking-widest text-slate-500">Room Code</p>
+                      <p className="font-mono text-2xl text-emerald-300 font-semibold">{room.roomCode}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-slate-600 mt-1">UUID {room.roomId}</p>
                     </div>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold border ${

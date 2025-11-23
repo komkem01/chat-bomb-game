@@ -7,10 +7,10 @@ interface JoinRequestsModalProps {
   isOpen: boolean;
   isLoading: boolean;
   requests: RoomJoinRequest[];
-  processingId: number | null;
+  processingId: string | null;
   onRefresh: () => void;
-  onApprove: (requestId: number) => void;
-  onReject: (requestId: number) => void;
+  onApprove: (requestId: string) => void;
+  onReject: (requestId: string) => void;
   onClose: () => void;
 }
 
@@ -78,7 +78,10 @@ const JoinRequestsModal: React.FC<JoinRequestsModalProps> = ({
                     <i className="fas fa-user"></i>
                     {request.playerName}
                   </p>
-                  <p className="text-sm text-slate-400">ขอเข้าห้อง {request.roomId}</p>
+                  <p className="text-sm text-slate-400">
+                    ขอเข้าห้อง {request.roomCode}
+                    <span className="text-slate-500 text-xs ml-2">({request.roomId})</span>
+                  </p>
                   <p className="text-xs text-slate-500">
                     ส่งเมื่อ {new Date(request.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
                   </p>

@@ -12,7 +12,7 @@ import {
 import { JOIN_REQUEST_TIMEOUT_SECONDS } from "@/lib/constants";
 import { PublicRoomSummary, RoomJoinRequest } from "@/types/game";
 
-const REQUEST_REFRESH_INTERVAL_MS = 5000;
+const REQUEST_REFRESH_INTERVAL_MS = 500; // Poll ทุก 0.5 วินาที เพื่อ auto-join แบบเกือบ realtime
 const ROOMS_PER_PAGE = 6;
 const REQUEST_TIMEOUT_MS = JOIN_REQUEST_TIMEOUT_SECONDS * 1000;
 
@@ -134,6 +134,8 @@ const CommunityPage = () => {
 
     load();
     clearRequestsRefreshTimer();
+    
+    // Poll every 500ms for near-instant response
     requestsRefreshTimer.current = setInterval(() => {
       void refreshRequests();
     }, REQUEST_REFRESH_INTERVAL_MS);
@@ -148,6 +150,7 @@ const CommunityPage = () => {
   }, [requestMap]);
 
   const activePendingRoomId = activePendingRequest?.roomId ?? null;
+  const activePendingRoomCode = activePendingRequest?.roomCode ?? null;
 
   const requestHistory = useMemo(() => {
     return Object.values(requestMap).sort(
@@ -159,7 +162,7 @@ const CommunityPage = () => {
     const previousStatuses = requestStatusRef.current;
     Object.values(requestMap).forEach((req) => {
       if (previousStatuses[req.roomId] === "PENDING" && req.status === "EXPIRED") {
-        showToast(`คำขอเข้าห้อง ${req.roomId} หมดเวลาแล้ว`, "error");
+        showToast(`คำขอเข้าห้อง ${req.roomCode} หมดเวลาแล้ว`, "error");
       }
     });
 
@@ -227,21 +230,35 @@ const CommunityPage = () => {
   }, [refreshRequests, refreshRooms]);
 
   const pendingApprovedRoom = useMemo(() => {
-    return Object.values(requestMap).find((req) => req.status === "APPROVED");
+    const approved = Object.values(requestMap).find((req) => req.status === "APPROVED");
+    if (approved) {
+      console.log('🎉 Found APPROVED room:', approved.roomCode, approved);
+    }
+    return approved;
   }, [requestMap]);
 
   useEffect(() => {
     if (!pendingApprovedRoom || !playerName || !userId) {
+      if (pendingApprovedRoom && !playerName) {
+        console.log('⚠️ Cannot auto-join: playerName is missing');
+      }
+      if (pendingApprovedRoom && !userId) {
+        console.log('⚠️ Cannot auto-join: userId is missing');
+      }
       return;
     }
+
+    console.log('🚀 Auto-joining room:', pendingApprovedRoom.roomCode);
 
     const autoJoin = async () => {
       try {
         setJoiningRoomId(pendingApprovedRoom.roomId);
-        await addPlayerToRoom(pendingApprovedRoom.roomId, userId, playerName);
-        localStorage.setItem("chat_bomb_auto_join_room", pendingApprovedRoom.roomId);
-        showToast(`ได้รับอนุญาตให้เข้าห้อง ${pendingApprovedRoom.roomId}`, "success");
+        console.log('📞 Calling addPlayerToRoom...');
+        await addPlayerToRoom(pendingApprovedRoom.roomCode, userId, playerName);
+        localStorage.setItem("chat_bomb_auto_join_room", pendingApprovedRoom.roomCode);
+        showToast(`ได้รับอนุญาตให้เข้าห้อง ${pendingApprovedRoom.roomCode}`, "success");
         await refreshRequests();
+        console.log('✈️ Navigating to /multiplayer');
         router.push("/multiplayer");
       } catch (error: any) {
         console.error("Failed to enter room after approval", error);
@@ -254,14 +271,15 @@ const CommunityPage = () => {
     void autoJoin();
   }, [pendingApprovedRoom, playerName, refreshRequests, router, showToast, userId]);
 
-  const handleRequestAccess = async (roomId: string) => {
+  const handleRequestAccess = async (roomId: string, roomCode: string) => {
     if (!userId || !playerName) {
       showToast("กรุณาตั้งชื่อก่อน", "error");
       router.push("/");
       return;
     }
     if (activePendingRoomId && activePendingRoomId !== roomId) {
-      showToast(`คุณกำลังรอห้อง ${activePendingRoomId} อนุมัติอยู่ โปรดรอให้ครบ ${JOIN_REQUEST_TIMEOUT_SECONDS} วินาที`, "error");
+      const pendingCode = activePendingRoomCode ?? activePendingRoomId;
+      showToast(`คุณกำลังรอห้อง ${pendingCode} อนุมัติอยู่ โปรดรอให้ครบ ${JOIN_REQUEST_TIMEOUT_SECONDS} วินาที`, "error");
       return;
     }
 
@@ -272,7 +290,8 @@ const CommunityPage = () => {
     setIsRequestingRoomId(roomId);
     try {
       await requestRoomJoin(roomId, userId, playerName);
-      showToast(`ส่งคำขอไปยังห้อง ${roomId} แล้ว`, "success");
+      showToast(`ส่งคำขอไปยังห้อง ${roomCode} แล้ว กรุณารอเจ้าของห้องอนุมัติ`, "success");
+      // อยู่หน้าเดิม รอ auto-join (ไม่ redirect)
       await refreshRequests();
       await refreshRooms();
     } catch (error: any) {
@@ -308,7 +327,8 @@ const CommunityPage = () => {
     } else if (isPending) {
       actionLabel = "รอเจ้าของอนุมัติ";
     } else if (waitingOnAnotherRoom && !isMember) {
-      actionLabel = activePendingRoomId ? `รอห้อง ${activePendingRoomId}` : "รอการตอบกลับ";
+  const pendingCode = activePendingRoomCode ?? activePendingRoomId;
+  actionLabel = pendingCode ? `รอห้อง ${pendingCode}` : "รอการตอบกลับ";
     } else if (isMember) {
       actionLabel = "เข้าสู่ห้อง";
     }
@@ -320,10 +340,11 @@ const CommunityPage = () => {
         key={room.roomId}
         className="rounded-3xl border border-slate-800/60 bg-gradient-to-br from-slate-900/70 to-slate-900 p-6 shadow-lg flex flex-col gap-4"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-300">ROOM ID</p>
-            <p className="font-mono text-2xl text-blue-200 font-bold">{room.roomId}</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-300">ROOM CODE</p>
+            <p className="font-mono text-3xl text-blue-200 font-bold">{room.roomCode}</p>
+            <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 mt-1">{room.status}</p>
           </div>
           <span
             className={`px-4 py-1.5 rounded-full text-xs font-semibold border ${
@@ -356,11 +377,11 @@ const CommunityPage = () => {
         <button
           onClick={() => {
             if (isMember) {
-              localStorage.setItem("chat_bomb_auto_join_room", room.roomId);
+              localStorage.setItem("chat_bomb_auto_join_room", room.roomCode);
               router.push("/multiplayer");
               return;
             }
-            handleRequestAccess(room.roomId);
+            handleRequestAccess(room.roomId, room.roomCode);
           }}
           disabled={isButtonDisabled}
           className={`w-full py-3 rounded-2xl border text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
@@ -421,14 +442,11 @@ const CommunityPage = () => {
             ) : (
               <>
                 <p className="text-slate-200 text-lg font-semibold">
-                  {requestHistory
-                    .slice(0, 2)
-                    .map((req) => `${req.roomId} (${REQUEST_STATUS_LABELS[req.status]})`)
-                    .join(" • ")}
+                  {requestHistory[0].roomCode} ({REQUEST_STATUS_LABELS[requestHistory[0].status]})
                 </p>
                 {activePendingRequest && (
                   <p className="text-amber-300 text-sm mt-1">
-                    รอเจ้าของห้อง {activePendingRequest.roomId} อนุมัติภายใน {pendingSecondsLeft ?? JOIN_REQUEST_TIMEOUT_SECONDS} วินาที
+                    รอเจ้าของห้อง {activePendingRequest.roomCode} อนุมัติภายใน {pendingSecondsLeft ?? JOIN_REQUEST_TIMEOUT_SECONDS} วินาที
                   </p>
                 )}
               </>

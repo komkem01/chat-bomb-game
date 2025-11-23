@@ -16,6 +16,8 @@ if (typeof window !== 'undefined' && !hasSupabaseConfig) {
 let supabase: SupabaseClient<Database> | null = null;
 let currentUserId: string | null = null;
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<Database> | null; userId: string }> => {
   // Initialize Supabase client once per application lifecycle
   if (!supabase && hasSupabaseConfig) {
@@ -41,7 +43,7 @@ export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<D
   // Reuse persisted anonymous user id so server-side ownership checks keep working after refresh
   if (typeof window !== 'undefined') {
     const storedId = window.localStorage.getItem('chat_bomb_user_id');
-    if (storedId) {
+    if (storedId && UUID_REGEX.test(storedId)) {
       currentUserId = storedId;
     } else {
       currentUserId = generateUserId();
@@ -55,7 +57,16 @@ export const initializeSupabase = async (): Promise<{ supabase: SupabaseClient<D
 };
 
 const generateUserId = (): string => {
-  return 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+  return template.replace(/[xy]/g, (char) => {
+    const random = (Math.random() * 16) | 0;
+    const value = char === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
 };
 
 type ApiResponse<T> = { data: T };
@@ -307,13 +318,19 @@ export const fetchOwnerJoinRequests = async (roomId: string, ownerId: string) =>
 };
 
 export const respondToJoinRequest = async (
-  requestId: number,
+  requestId: string,
   ownerId: string,
   decision: 'APPROVE' | 'DENY'
 ) => {
   return apiFetch<RoomJoinRequest>(`/api/rooms/join/requests/${requestId}`, {
     method: 'POST',
     body: JSON.stringify({ ownerId, decision }),
+  });
+};
+
+export const cancelJoinRequest = async (requestId: string) => {
+  return apiFetch<RoomJoinRequest>(`/api/rooms/join/requests/${requestId}`, {
+    method: 'DELETE',
   });
 };
 

@@ -11,7 +11,7 @@ export interface Player {
 }
 
 export interface Message {
-  id: number;
+  id: string;
   sender: string;
   senderId: string;
   text: string;
@@ -38,6 +38,7 @@ export interface RoomData {
 
 export interface RelayRoomSummary {
   roomId: string;
+  roomCode: string;
   status: DbRoom['status'];
   playerCount: number;
   hint: string | null;
@@ -53,6 +54,7 @@ export interface RelaySession {
 
 export interface PublicRoomSummary {
   roomId: string;
+  roomCode: string;
   status: DbRoom['status'];
   playerCount: number;
   maxPlayers: number;
@@ -64,8 +66,9 @@ export interface PublicRoomSummary {
 }
 
 export interface RoomJoinRequest {
-  id: number;
+  id: string;
   roomId: string;
+  roomCode: string;
   playerId: string;
   playerName: string;
   status: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';

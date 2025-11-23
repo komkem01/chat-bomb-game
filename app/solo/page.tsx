@@ -38,6 +38,11 @@ const POWER_UPS = {
 
 const normalizeLocalText = (text: string) => text.trim().toLowerCase();
 
+const generateClientId = (prefix: string) => {
+  const randomSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${randomSuffix}`;
+};
+
 interface SoloSessionState {
   bombWord: string;
   hint: string;
@@ -261,7 +266,7 @@ export default function SoloPracticePage() {
       .replace("{combo}", session.combo.toString());
 
     const botMessage: DbMessage = {
-      id: session.messageSeq++,
+      id: `solo-msg-${session.messageSeq++}`,
       room_id: "SOLO",
       sender_id: "solo-bot",
       sender_name: `${session.botName} [Lv.${session.difficultyLevel}]`,
@@ -398,7 +403,7 @@ export default function SoloPracticePage() {
     if (isBoom) {
       const finalScore = session.score + 1000;
       const playerMessage: DbMessage = {
-        id: session.messageSeq++,
+        id: `solo-msg-${session.messageSeq++}`,
         room_id: "SOLO",
         sender_id: gameState.userId,
         sender_name: `${gameState.playerName} [${finalScore}pts]`,
@@ -491,7 +496,7 @@ export default function SoloPracticePage() {
     }
 
     const playerMessage: DbMessage = {
-      id: session.messageSeq++,
+      id: `solo-msg-${session.messageSeq++}`,
       room_id: "SOLO",
       sender_id: gameState.userId,
       sender_name: `${gameState.playerName} [${session.score}pts]`,
@@ -587,10 +592,11 @@ export default function SoloPracticePage() {
       trapWords: [],
     };
 
+    const soloRoomCode = Math.floor(100000 + Math.random() * 900000).toString();
     const soloRoom: RoomData = {
       room: {
-        id: -1,
         room_id: "SOLO",
+        room_code: soloRoomCode,
         owner_id: gameState.userId,
         status: "PLAYING",
         bomb_word: normalizedWord,
@@ -603,7 +609,7 @@ export default function SoloPracticePage() {
       } as DbRoom,
       players: [
         {
-          id: -1,
+          id: generateClientId("player"),
           room_id: "SOLO",
           player_id: gameState.userId,
           player_name: gameState.playerName,
@@ -613,7 +619,7 @@ export default function SoloPracticePage() {
           joined_at: nowIso,
         },
         {
-          id: -2,
+          id: generateClientId("player"),
           room_id: "SOLO",
           player_id: "solo-bot",
           player_name: preset.botName,
@@ -625,7 +631,7 @@ export default function SoloPracticePage() {
       ],
       messages: [
         {
-          id: 1,
+          id: generateClientId("msg"),
           room_id: "SOLO",
           sender_id: "solo-bot",
           sender_name: preset.botName,

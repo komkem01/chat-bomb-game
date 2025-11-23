@@ -13,6 +13,9 @@ interface LobbyScreenProps {
   onShowRules?: (gameMode: "solo" | "multiplayer") => void;
   onGoBack: () => void;
   isJoiningRoom?: boolean;
+  waitingForApproval?: boolean;
+  pendingRoomCode?: string | null;
+  onCancelWaiting?: () => void;
 }
 
 const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -25,6 +28,9 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onShowRules,
   onGoBack,
   isJoiningRoom = false,
+  waitingForApproval = false,
+  pendingRoomCode = null,
+  onCancelWaiting,
 }) => {
   return (
     <div className="w-full max-w-5xl mx-auto h-full flex flex-col gap-6 p-4 sm:p-6 lg:p-8 animate-slide-up">
@@ -157,28 +163,50 @@ const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <i className="fas fa-hashtag text-lg"></i>
               </div>
               <input
-                value={roomCode}
-                onChange={(e) => onRoomCodeChange(e.target.value)}
+                value={waitingForApproval ? (pendingRoomCode || "") : roomCode}
+                onChange={(e) => !waitingForApproval && onRoomCodeChange(e.target.value)}
                 type="text"
                 placeholder="000000"
                 maxLength={6}
-                className="w-full bg-slate-900/60 text-white text-center text-3xl tracking-[0.6em] pl-14 pr-4 py-5 rounded-2xl border-2 border-slate-700/60 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/40 font-mono transition-all"
+                disabled={waitingForApproval}
+                className={`w-full bg-slate-900/60 text-white text-center text-3xl tracking-[0.6em] pl-14 pr-4 py-5 rounded-2xl border-2 transition-all font-mono ${
+                  waitingForApproval 
+                    ? "border-amber-500/60 cursor-not-allowed opacity-80" 
+                    : "border-slate-700/60 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/40"
+                }`}
               />
+              {waitingForApproval && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <div className="w-6 h-6 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></div>
+                </div>
+              )}
             </div>
             <div className="text-slate-400 text-xs">
-              ป้อนรหัสแล้วกด &ldquo;เข้าร่วมห้อง&rdquo; หรือรอระบบเชื่อมต่ออัตโนมัติ
+              {waitingForApproval 
+                ? "รอเจ้าของห้องอนุมัติ..." 
+                : "ป้อนรหัสแล้วกด \"เข้าร่วมห้อง\" หรือรอระบบเชื่อมต่ออัตโนมัติ"
+              }
             </div>
             <button
-              onClick={!isJoiningRoom ? onJoinRoom : undefined}
-              disabled={isJoiningRoom}
+              onClick={!isJoiningRoom && !waitingForApproval ? onJoinRoom : waitingForApproval ? onCancelWaiting : undefined}
+              disabled={isJoiningRoom || (!waitingForApproval && roomCode.length !== 6)}
               className={`mt-auto w-full px-6 py-4 rounded-2xl text-white font-semibold text-lg border border-white/30 transition-all flex items-center justify-center gap-3 ${
-                isJoiningRoom ? "bg-white/5 cursor-not-allowed opacity-70" : "bg-white/10 hover:bg-white/20"
+                waitingForApproval 
+                  ? "bg-red-500/20 border-red-500/40 hover:bg-red-500/30" 
+                  : isJoiningRoom || roomCode.length !== 6
+                  ? "bg-white/5 cursor-not-allowed opacity-70" 
+                  : "bg-white/10 hover:bg-white/20"
               }`}
             >
               {isJoiningRoom ? (
                 <>
                   <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
                   <span>กำลังเชื่อมต่อ...</span>
+                </>
+              ) : waitingForApproval ? (
+                <>
+                  <i className="fas fa-times"></i>
+                  ยกเลิกคำขอ
                 </>
               ) : (
                 <>

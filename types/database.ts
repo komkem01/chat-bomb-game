@@ -3,8 +3,8 @@ export interface Database {
     Tables: {
       rooms: {
         Row: {
-          id: number;
           room_id: string;
+          room_code: string;
           owner_id: string;
           status: 'IDLE' | 'PLAYING' | 'CLOSED';
           bomb_word: string | null;
@@ -16,8 +16,8 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
-          id?: number;
-          room_id: string;
+          room_id?: string;
+          room_code: string;
           owner_id: string;
           status?: 'IDLE' | 'PLAYING' | 'CLOSED';
           bomb_word?: string | null;
@@ -29,8 +29,8 @@ export interface Database {
           updated_at?: string;
         };
         Update: {
-          id?: number;
           room_id?: string;
+          room_code?: string;
           owner_id?: string;
           status?: 'IDLE' | 'PLAYING' | 'CLOSED';
           bomb_word?: string | null;
@@ -44,7 +44,7 @@ export interface Database {
       };
       room_players: {
         Row: {
-          id: number;
+          id: string;
           room_id: string;
           player_id: string;
           player_name: string;
@@ -54,7 +54,7 @@ export interface Database {
           joined_at: string;
         };
         Insert: {
-          id?: number;
+          id?: string;
           room_id: string;
           player_id: string;
           player_name: string;
@@ -64,7 +64,7 @@ export interface Database {
           joined_at?: string;
         };
         Update: {
-          id?: number;
+          id?: string;
           room_id?: string;
           player_id?: string;
           player_name?: string;
@@ -76,7 +76,7 @@ export interface Database {
       };
       messages: {
         Row: {
-          id: number;
+          id: string;
           room_id: string;
           sender_id: string;
           sender_name: string;
@@ -85,7 +85,7 @@ export interface Database {
           created_at: string;
         };
         Insert: {
-          id?: number;
+          id?: string;
           room_id: string;
           sender_id: string;
           sender_name: string;
@@ -94,7 +94,7 @@ export interface Database {
           created_at?: string;
         };
         Update: {
-          id?: number;
+          id?: string;
           room_id?: string;
           sender_id?: string;
           sender_name?: string;
@@ -105,7 +105,7 @@ export interface Database {
       };
       relay_sessions: {
         Row: {
-          id: number;
+          id: string;
           session_id: string;
           player_id: string;
           origin_room_id: string;
@@ -116,8 +116,8 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
-          id?: number;
-          session_id: string;
+          id?: string;
+          session_id?: string;
           player_id: string;
           origin_room_id: string;
           target_room_id: string;
@@ -127,7 +127,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: {
-          id?: number;
+          id?: string;
           session_id?: string;
           player_id?: string;
           origin_room_id?: string;
@@ -140,7 +140,7 @@ export interface Database {
       };
       room_join_requests: {
         Row: {
-          id: number;
+          id: string;
           room_id: string;
           player_id: string;
           player_name: string;
@@ -149,7 +149,7 @@ export interface Database {
           resolved_at: string | null;
         };
         Insert: {
-          id?: number;
+          id?: string;
           room_id: string;
           player_id: string;
           player_name: string;
@@ -158,7 +158,7 @@ export interface Database {
           resolved_at?: string | null;
         };
         Update: {
-          id?: number;
+          id?: string;
           room_id?: string;
           player_id?: string;
           player_name?: string;

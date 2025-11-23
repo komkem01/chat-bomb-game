@@ -18,6 +18,8 @@ import {
   returnRelayRoom,
   fetchOwnerJoinRequests,
   respondToJoinRequest,
+  requestRoomJoin,
+  fetchMyJoinRequests,
 } from "@/lib/supabase";
 import {
   GameState,
@@ -69,7 +71,9 @@ export default function MultiplayerPage() {
   const [showJoinRequestsModal, setShowJoinRequestsModal] = useState(false);
   const [joinRequests, setJoinRequests] = useState<RoomJoinRequest[]>([]);
   const [isJoinRequestsLoading, setIsJoinRequestsLoading] = useState(false);
-  const [processingJoinRequestId, setProcessingJoinRequestId] = useState<number | null>(null);
+  const [processingJoinRequestId, setProcessingJoinRequestId] = useState<string | null>(null);
+  const [waitingForApproval, setWaitingForApproval] = useState(false);
+  const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
 
   const unsubscribeRoomListener = useRef<{ unsubscribe: () => void } | null>(null);
   const chatBoxRef = useRef<HTMLDivElement>(null);
@@ -81,6 +85,7 @@ export default function MultiplayerPage() {
   const roomCodeLatestRef = useRef(roomCodeInput);
   const isJoiningRoomRef = useRef(false);
   const relayAutoReturnRef = useRef(false);
+  const approvalPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const relayOriginRoomId = relaySession ? relaySession.originRoomId : currentRoomId;
 
@@ -169,6 +174,9 @@ export default function MultiplayerPage() {
       }
       if (roundTimerRef.current) {
         clearInterval(roundTimerRef.current);
+      }
+      if (approvalPollIntervalRef.current) {
+        clearInterval(approvalPollIntervalRef.current);
       }
     };
   }, [clearRoomPollInterval]);
@@ -469,7 +477,7 @@ export default function MultiplayerPage() {
   }, [currentRoomData?.room.owner_id, currentRoomId, refreshJoinRequests, showToast, userId]);
 
   const respondJoinRequest = useCallback(
-    async (requestId: number, decision: 'APPROVE' | 'DENY') => {
+    async (requestId: string, decision: 'APPROVE' | 'DENY') => {
       if (!currentRoomId || !userId) {
         return;
       }
@@ -494,12 +502,16 @@ export default function MultiplayerPage() {
   );
 
   const handleApproveJoinRequest = useCallback(
-    (requestId: number) => respondJoinRequest(requestId, 'APPROVE'),
+    (requestId: string) => {
+      void respondJoinRequest(requestId, 'APPROVE');
+    },
     [respondJoinRequest]
   );
 
   const handleRejectJoinRequest = useCallback(
-    (requestId: number) => respondJoinRequest(requestId, 'DENY'),
+    (requestId: string) => {
+      void respondJoinRequest(requestId, 'DENY');
+    },
     [respondJoinRequest]
   );
 
@@ -548,7 +560,7 @@ export default function MultiplayerPage() {
       setIsCreatingRoom(true);
       const roomData = await createRoom(newRoomId, userId, playerName);
       enterGame(roomData.room.room_id);
-      showToast(`สร้างห้องสำเร็จ (รหัส ${roomData.room.room_id})`, "success");
+      showToast(`สร้างห้องสำเร็จ (รหัส ${roomData.room.room_code})`, "success");
     } catch (e) {
       console.error("Error creating room:", e);
       showToast("สร้างห้องไม่สำเร็จ", "error");
@@ -569,9 +581,79 @@ export default function MultiplayerPage() {
     try {
       isJoiningRoomRef.current = true;
       setIsJoiningRoom(true);
-      await addPlayerToRoom(sanitized, userId, playerName);
-      enterGame(sanitized);
-      showToast(`เข้าร่วมห้อง ${sanitized} สำเร็จ`, "success");
+      
+      // ส่ง join request แทนการ join ทันที (ยกเว้นเจ้าของห้อง)
+      try {
+        await addPlayerToRoom(sanitized, userId, playerName);
+        // ถ้า join สำเร็จ = เป็นเจ้าของห้อง
+        enterGame(sanitized);
+        showToast(`เข้าร่วมห้อง ${sanitized} สำเร็จ`, "success");
+      } catch (joinError: any) {
+        // ถ้า join ไม่สำเร็จ = ต้องส่ง request
+        if (joinError?.message?.includes("ต้องได้รับอนุมัติ")) {
+          await requestRoomJoin(sanitized, userId, playerName);
+          showToast("ส่งคำขอเข้าร่วมห้องแล้ว กรุณารอเจ้าของห้องอนุมัติ", "info");
+          // เปลี่ยน state เป็น waiting แทนการ redirect
+          setPendingRoomCode(sanitized);
+          setWaitingForApproval(true);
+          
+          // เริ่ม poll เพื่อเช็ค approval
+          if (approvalPollIntervalRef.current) {
+            clearInterval(approvalPollIntervalRef.current);
+          }
+          approvalPollIntervalRef.current = setInterval(async () => {
+            try {
+              const requests = await fetchMyJoinRequests(userId);
+              const matchingRequest = requests.find(r => r.roomCode === sanitized);
+              
+              if (!matchingRequest || matchingRequest.status === 'EXPIRED') {
+                // ไม่มี request หรือหมดอายุ
+                if (approvalPollIntervalRef.current) {
+                  clearInterval(approvalPollIntervalRef.current);
+                  approvalPollIntervalRef.current = null;
+                }
+                setWaitingForApproval(false);
+                setPendingRoomCode(null);
+                showToast("คำขอหมดอายุแล้ว", "error");
+                return;
+              }
+              
+              if (matchingRequest.status === 'APPROVED') {
+                // ได้รับการอนุมัติ - join ห้อง
+                if (approvalPollIntervalRef.current) {
+                  clearInterval(approvalPollIntervalRef.current);
+                  approvalPollIntervalRef.current = null;
+                }
+                setWaitingForApproval(false);
+                setPendingRoomCode(null);
+                
+                try {
+                  await addPlayerToRoom(sanitized, userId, playerName);
+                  enterGame(sanitized);
+                  showToast(`ได้รับอนุมัติและเข้าห้องสำเร็จ`, "success");
+                } catch (error: any) {
+                  showToast(error?.message || "ไม่สามารถเข้าห้องได้", "error");
+                }
+              } else if (matchingRequest.status === 'DENIED') {
+                // ถูกปฏิเสธ
+                if (approvalPollIntervalRef.current) {
+                  clearInterval(approvalPollIntervalRef.current);
+                  approvalPollIntervalRef.current = null;
+                }
+                setWaitingForApproval(false);
+                setPendingRoomCode(null);
+                showToast("คำขอของคุณถูกปฏิเสธ", "error");
+              }
+            } catch (error) {
+              console.error("Error polling approval:", error);
+            }
+          }, 2000); // Poll ทุก 2 วินาที
+          
+          return;
+        } else {
+          throw joinError;
+        }
+      }
     } catch (error: any) {
       console.error("Error joining room:", error);
       showToast(error?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ", "error");
@@ -682,10 +764,11 @@ export default function MultiplayerPage() {
   };
 
   const copyRoomCode = () => {
-    if (!currentRoomId) return;
+    const roomCode = currentRoomData?.room.room_code;
+    if (!roomCode) return;
     navigator.clipboard
-      .writeText(currentRoomId)
-      .then(() => showToast("คัดลอกรหัสห้องแล้ว", "success"));
+      .writeText(roomCode)
+      .then(() => showToast(`คัดลอกโค้ด ${roomCode} แล้ว`, "success"));
   };
 
   const resetProfile = () => {
@@ -842,6 +925,17 @@ export default function MultiplayerPage() {
             onJoinRoom={joinRoomFunc}
             onResetProfile={resetProfile}
             isJoiningRoom={isJoiningRoom}
+            waitingForApproval={waitingForApproval}
+            pendingRoomCode={pendingRoomCode}
+            onCancelWaiting={() => {
+              if (approvalPollIntervalRef.current) {
+                clearInterval(approvalPollIntervalRef.current);
+                approvalPollIntervalRef.current = null;
+              }
+              setWaitingForApproval(false);
+              setPendingRoomCode(null);
+              showToast("ยกเลิกคำขอแล้ว", "info");
+            }}
             onShowRules={(gameMode) => {
               if (gameMode === "multiplayer") {
                 setShowRulesModal(true);

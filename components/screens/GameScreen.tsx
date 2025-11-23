@@ -126,6 +126,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
     hasStartedGame &&
     podiumEntries.length > 0;
   const totalPlayers = roomData.players?.length || 0;
+  const displayRoomCode = roomData.room.room_code || roomId;
   const dangerPercentage =
     totalPlayers > 0 ? Math.round((deadCount / totalPlayers) * 100) : 0;
   const allowOwnerControls = isOwner && !isSoloMode;
@@ -288,7 +289,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           <div className="flex flex-col">
             <span className="text-[10px] sm:text-xs text-blue-400 uppercase tracking-wider font-bold flex items-center gap-1">
               <i className={`fas ${isSoloMode ? 'fa-user-ninja' : 'fa-key'} text-[8px]`}></i>
-              {isSoloMode ? 'Solo Mode' : 'Room ID'}
+              {isSoloMode ? 'Solo Mode' : 'Room Code'}
             </span>
             {isSoloMode ? (
               <span className="font-mono text-base sm:text-lg text-purple-300 font-bold">
@@ -300,7 +301,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
                 onClick={onCopyRoomCode}
               >
                 <span className="font-mono text-base sm:text-lg text-blue-400 font-bold group-hover:text-blue-300 transition-colors">
-                  {roomId}
+                  {displayRoomCode}
                 </span>
                 <i className="far fa-copy text-xs text-slate-500 group-hover:text-blue-400 transition-colors"></i>
               </div>
