@@ -367,7 +367,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
               className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-200 text-xs sm:text-sm font-semibold border border-amber-400/40 hover:border-amber-300/60 transition-all flex items-center gap-2"
             >
               <i className="fas fa-home"></i>
-              <span className="hidden sm:inline">กลับห้อง {relaySession.originRoomId}</span>
+              <span>กลับห้อง</span>
             </button>
           )}
           {!isRelayGuest && onOpenRelayModal && canRelay && (
@@ -449,10 +449,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
           {isRelayGuest && relaySession && (
             <div className="px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-400/30 text-purple-100 text-xs flex items-center gap-2 shadow-md">
               <i className="fas fa-user-astronaut"></i>
-              <div className="flex flex-col leading-tight">
-                <span className="font-semibold">Guest Relay</span>
-                <span className="text-[10px] text-purple-100/70">จากห้อง {relaySession.originRoomId}</span>
-              </div>
+              <span className="font-semibold">Guest Relay</span>
             </div>
           )}
           
