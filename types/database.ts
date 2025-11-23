@@ -49,6 +49,8 @@ export interface Database {
           player_id: string;
           player_name: string;
           is_eliminated: boolean;
+          is_guest: boolean;
+          origin_room_id: string | null;
           joined_at: string;
         };
         Insert: {
@@ -57,6 +59,8 @@ export interface Database {
           player_id: string;
           player_name: string;
           is_eliminated?: boolean;
+          is_guest?: boolean;
+          origin_room_id?: string | null;
           joined_at?: string;
         };
         Update: {
@@ -65,6 +69,8 @@ export interface Database {
           player_id?: string;
           player_name?: string;
           is_eliminated?: boolean;
+          is_guest?: boolean;
+          origin_room_id?: string | null;
           joined_at?: string;
         };
       };
@@ -95,6 +101,70 @@ export interface Database {
           message_text?: string;
           is_boom?: boolean;
           created_at?: string;
+        };
+      };
+      relay_sessions: {
+        Row: {
+          id: number;
+          session_id: string;
+          player_id: string;
+          origin_room_id: string;
+          target_room_id: string;
+          status: 'MATCHING' | 'JOINED' | 'RETURNING' | 'CLOSED';
+          role: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          session_id: string;
+          player_id: string;
+          origin_room_id: string;
+          target_room_id: string;
+          status?: 'MATCHING' | 'JOINED' | 'RETURNING' | 'CLOSED';
+          role?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          session_id?: string;
+          player_id?: string;
+          origin_room_id?: string;
+          target_room_id?: string;
+          status?: 'MATCHING' | 'JOINED' | 'RETURNING' | 'CLOSED';
+          role?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      room_join_requests: {
+        Row: {
+          id: number;
+          room_id: string;
+          player_id: string;
+          player_name: string;
+          status: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          room_id: string;
+          player_id: string;
+          player_name: string;
+          status?: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          room_id?: string;
+          player_id?: string;
+          player_name?: string;
+          status?: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';
+          created_at?: string;
+          resolved_at?: string | null;
         };
       };
     };

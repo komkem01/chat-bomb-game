@@ -12,6 +12,12 @@ import {
   closeRoom,
   resetGame,
   subscribeToRoom,
+  fetchRelayRooms,
+  requestRelayMatch,
+  joinRelayRoom,
+  returnRelayRoom,
+  fetchOwnerJoinRequests,
+  respondToJoinRequest,
 } from "@/lib/supabase";
 import {
   GameState,
@@ -19,10 +25,15 @@ import {
   RoomData,
   DbMessage,
   DbRoom,
+  RelayRoomSummary,
+  RelaySession,
+  RoomJoinRequest,
 } from "@/types/game";
 import LobbyScreen from "@/components/screens/LobbyScreen";
 import GameScreenComponent from "@/components/screens/GameScreen";
 import RulesModal from "@/components/modals/RulesModal";
+import RelayModal from "@/components/modals/RelayModal";
+import JoinRequestsModal from "@/components/modals/JoinRequestsModal";
 
 const FETCH_DEBOUNCE_MS = 50;
 const REALTIME_KEEPALIVE_INTERVAL_MS = 4000;
@@ -45,9 +56,20 @@ export default function MultiplayerPage() {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
+  const [showRelayModal, setShowRelayModal] = useState(false);
+  const [relayRooms, setRelayRooms] = useState<RelayRoomSummary[]>([]);
+  const [isRelayLoading, setIsRelayLoading] = useState(false);
+  const [isRelayJoining, setIsRelayJoining] = useState(false);
+  const [joiningRelayRoomId, setJoiningRelayRoomId] = useState<string | null>(null);
+  const [relaySession, setRelaySession] = useState<RelaySession | null>(null);
+  const [isReturningRelay, setIsReturningRelay] = useState(false);
   const [autoReturnCountdown, setAutoReturnCountdown] = useState<number | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [roundTimeLeft, setRoundTimeLeft] = useState<number | null>(null);
+  const [showJoinRequestsModal, setShowJoinRequestsModal] = useState(false);
+  const [joinRequests, setJoinRequests] = useState<RoomJoinRequest[]>([]);
+  const [isJoinRequestsLoading, setIsJoinRequestsLoading] = useState(false);
+  const [processingJoinRequestId, setProcessingJoinRequestId] = useState<number | null>(null);
 
   const unsubscribeRoomListener = useRef<{ unsubscribe: () => void } | null>(null);
   const chatBoxRef = useRef<HTMLDivElement>(null);
@@ -58,6 +80,9 @@ export default function MultiplayerPage() {
   const hasShownCloseToastRef = useRef(false);
   const roomCodeLatestRef = useRef(roomCodeInput);
   const isJoiningRoomRef = useRef(false);
+  const relayAutoReturnRef = useRef(false);
+
+  const relayOriginRoomId = relaySession ? relaySession.originRoomId : currentRoomId;
 
   const showToast = useCallback((message: string, type: ToastType = "info") => {
     const toastContainer = document.getElementById("toast-container");
@@ -150,12 +175,6 @@ export default function MultiplayerPage() {
 
   const generateRoomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-  const enterGame = (roomId: string) => {
-    setCurrentRoomId(roomId);
-    setCurrentScreen("game");
-    listenToRoom(roomId);
-  };
-
   const leaveRoom = useCallback(() => {
     if (unsubscribeRoomListener.current) {
       unsubscribeRoomListener.current.unsubscribe();
@@ -172,14 +191,26 @@ export default function MultiplayerPage() {
     }
     setAutoReturnCountdown(null);
     hasShownCloseToastRef.current = false;
+    if (relaySession && userId) {
+      void (async () => {
+        try {
+          await returnRelayRoom(relaySession.sessionId, userId);
+        } catch (error) {
+          console.error("Failed to cleanup relay session on leave", error);
+        } finally {
+          setRelaySession(null);
+        }
+      })();
+    }
     setCurrentRoomId(null);
     setCurrentRoomData(null);
     setCurrentScreen("lobby");
     setChatInput("");
     setRoomCodeInput("");
-  }, [clearRoomPollInterval]);
+  }, [clearRoomPollInterval, relaySession, userId]);
 
-  const listenToRoom = (roomId: string) => {
+  const listenToRoom = useCallback(
+    (roomId: string) => {
     if (unsubscribeRoomListener.current) {
       unsubscribeRoomListener.current.unsubscribe();
       unsubscribeRoomListener.current = null;
@@ -285,7 +316,228 @@ export default function MultiplayerPage() {
         },
       } as any;
     }
-  };
+  },
+    [clearRoomPollInterval, showToast, leaveRoom]
+  );
+
+  const enterGame = useCallback(
+    (roomId: string) => {
+      setCurrentRoomId(roomId);
+      setCurrentScreen("game");
+      relayAutoReturnRef.current = false;
+      listenToRoom(roomId);
+    },
+    [listenToRoom]
+  );
+
+  const teardownRelaySession = useCallback(async () => {
+    if (!relaySession || !userId) {
+      return;
+    }
+    try {
+      await returnRelayRoom(relaySession.sessionId, userId);
+    } catch (error) {
+      console.error("Failed to teardown relay session", error);
+    } finally {
+      setRelaySession(null);
+    }
+  }, [relaySession, userId]);
+
+  const handleRelayReturnHome = useCallback(async () => {
+    if (!relaySession || !userId) {
+      return;
+    }
+    setIsReturningRelay(true);
+    try {
+      const payload = await returnRelayRoom(relaySession.sessionId, userId);
+      setRelaySession(null);
+      setShowRelayModal(false);
+      setCurrentRoomData(payload.roomData);
+      enterGame(payload.originRoomId);
+      showToast("กลับสู่ห้องหลักแล้ว", "success");
+    } catch (error: any) {
+      console.error("Failed to return from relay", error);
+      showToast(error?.message || "ไม่สามารถกลับห้องหลักได้", "error");
+    } finally {
+      relayAutoReturnRef.current = false;
+      setIsReturningRelay(false);
+    }
+  }, [relaySession, userId, enterGame, showToast]);
+
+  const refreshRelayRooms = useCallback(async () => {
+    if (!userId || !relayOriginRoomId) {
+      showToast("ต้องอยู่ในห้องหลักก่อน", "error");
+      return;
+    }
+    setIsRelayLoading(true);
+    try {
+      const rooms = await fetchRelayRooms(relayOriginRoomId, userId);
+      setRelayRooms(rooms);
+    } catch (error: any) {
+      console.error("Failed to load relay rooms", error);
+      showToast(error?.message || "โหลดรายชื่อห้องไม่สำเร็จ", "error");
+    } finally {
+      setIsRelayLoading(false);
+    }
+  }, [userId, relayOriginRoomId, showToast]);
+
+  const handleRelayQuickJoin = useCallback(async () => {
+    if (!userId || !playerName || !relayOriginRoomId) {
+      showToast("ต้องอยู่ในห้องหลักก่อน", "error");
+      return;
+    }
+    setIsRelayJoining(true);
+    setJoiningRelayRoomId(null);
+    try {
+      const payload = await requestRelayMatch(userId, playerName, relayOriginRoomId);
+      setRelaySession(payload.session);
+      setShowRelayModal(false);
+      setCurrentRoomData(payload.roomData);
+      enterGame(payload.session.targetRoomId);
+      showToast(`เข้าร่วมห้อง ${payload.session.targetRoomId} สำเร็จ`, "success");
+    } catch (error: any) {
+      console.error("Failed to join random relay room", error);
+      showToast(error?.message || "ไม่สามารถเชื่อมห้องอื่นได้", "error");
+    } finally {
+      setIsRelayJoining(false);
+      setJoiningRelayRoomId(null);
+    }
+  }, [userId, playerName, relayOriginRoomId, enterGame, showToast]);
+
+  const handleRelayRoomSelect = useCallback(
+    async (targetRoomId: string) => {
+      if (!userId || !playerName || !relayOriginRoomId) {
+        showToast("ต้องอยู่ในห้องหลักก่อน", "error");
+        return;
+      }
+      setIsRelayJoining(true);
+      setJoiningRelayRoomId(targetRoomId);
+      try {
+        const payload = await joinRelayRoom(userId, playerName, relayOriginRoomId, targetRoomId);
+        setRelaySession(payload.session);
+        setShowRelayModal(false);
+        setCurrentRoomData(payload.roomData);
+        enterGame(payload.session.targetRoomId);
+        showToast(`เข้าร่วมห้อง ${targetRoomId} สำเร็จ`, "success");
+      } catch (error: any) {
+        console.error("Failed to join selected relay room", error);
+        showToast(error?.message || "ไม่สามารถเข้าห้องนี้ได้", "error");
+      } finally {
+        setIsRelayJoining(false);
+        setJoiningRelayRoomId(null);
+      }
+    },
+    [userId, playerName, relayOriginRoomId, enterGame, showToast]
+  );
+
+  const handleOpenRelayModal = useCallback(() => {
+    if (!userId || !playerName || !relayOriginRoomId) {
+      showToast("ต้องเข้าร่วมห้องหลักก่อน", "error");
+      return;
+    }
+    if (relaySession) {
+      showToast("คุณอยู่ในโหมด Guest อยู่แล้ว", "info");
+      return;
+    }
+    setShowRelayModal(true);
+    void refreshRelayRooms();
+  }, [userId, playerName, relayOriginRoomId, relaySession, refreshRelayRooms, showToast]);
+
+  const refreshJoinRequests = useCallback(async () => {
+    if (!currentRoomId || !userId || currentRoomData?.room.owner_id !== userId) {
+      return;
+    }
+    setIsJoinRequestsLoading(true);
+    try {
+      const requests = await fetchOwnerJoinRequests(currentRoomId, userId);
+      setJoinRequests(requests);
+    } catch (error: any) {
+      console.error("Failed to fetch join requests", error);
+      showToast(error?.message || "ไม่สามารถโหลดคำขอได้", "error");
+    } finally {
+      setIsJoinRequestsLoading(false);
+    }
+  }, [currentRoomData?.room.owner_id, currentRoomId, showToast, userId]);
+
+  const handleOpenJoinRequests = useCallback(() => {
+    if (!currentRoomId || !userId || currentRoomData?.room.owner_id !== userId) {
+      showToast("เฉพาะเจ้าของห้องเท่านั้นที่ดูคำขอได้", "error");
+      return;
+    }
+    setShowJoinRequestsModal(true);
+    void refreshJoinRequests();
+  }, [currentRoomData?.room.owner_id, currentRoomId, refreshJoinRequests, showToast, userId]);
+
+  const respondJoinRequest = useCallback(
+    async (requestId: number, decision: 'APPROVE' | 'DENY') => {
+      if (!currentRoomId || !userId) {
+        return;
+      }
+      setProcessingJoinRequestId(requestId);
+      try {
+        await respondToJoinRequest(requestId, userId, decision);
+        showToast(
+          decision === 'APPROVE' ? 'อนุมัติให้เข้าห้องแล้ว' : 'ปฏิเสธคำขอเรียบร้อย',
+          decision === 'APPROVE' ? 'success' : 'info'
+        );
+        await refreshJoinRequests();
+        const updated = await getRoomData(currentRoomId);
+        setCurrentRoomData(updated);
+      } catch (error: any) {
+        console.error('Failed to respond join request', error);
+        showToast(error?.message || 'จัดการคำขอไม่สำเร็จ', 'error');
+      } finally {
+        setProcessingJoinRequestId(null);
+      }
+    },
+    [currentRoomId, refreshJoinRequests, showToast, userId]
+  );
+
+  const handleApproveJoinRequest = useCallback(
+    (requestId: number) => respondJoinRequest(requestId, 'APPROVE'),
+    [respondJoinRequest]
+  );
+
+  const handleRejectJoinRequest = useCallback(
+    (requestId: number) => respondJoinRequest(requestId, 'DENY'),
+    [respondJoinRequest]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (relaySession) {
+        void teardownRelaySession();
+      }
+    };
+  }, [relaySession, teardownRelaySession]);
+
+  useEffect(() => {
+    if (!relaySession || !currentRoomId || !currentRoomData || !userId) {
+      return;
+    }
+
+    const isGuestContext = currentRoomId === relaySession.targetRoomId;
+    if (!isGuestContext) {
+      return;
+    }
+
+    const isRoomClosed = currentRoomData.room.status === "CLOSED";
+    const stillInRoom = currentRoomData.players?.some((p) => p.player_id === userId);
+
+    if ((isRoomClosed || !stillInRoom) && !relayAutoReturnRef.current && !isReturningRelay) {
+      relayAutoReturnRef.current = true;
+      showToast("ห้องปลายทางปิดแล้ว กำลังกลับห้องหลัก", "info");
+      void handleRelayReturnHome();
+    }
+  }, [
+    relaySession,
+    currentRoomId,
+    currentRoomData,
+    userId,
+    handleRelayReturnHome,
+    showToast,
+    isReturningRelay,
+  ]);
 
   const createRoomFunc = async () => {
     if (!userId || !playerName || isCreatingRoom) return;
@@ -305,12 +557,11 @@ export default function MultiplayerPage() {
     }
   };
 
-  const joinRoomFunc = async (overrideCode?: string) => {
+  const tryJoinRoom = useCallback(async (code: string) => {
     if (!userId || !playerName || isJoiningRoomRef.current) return;
 
-    const codeSource = typeof overrideCode === "string" ? overrideCode : roomCodeInput;
-    const code = codeSource.trim();
-    if (code.length !== 6) {
+    const sanitized = code.trim();
+    if (sanitized.length !== 6) {
       showToast("รหัสห้องไม่ถูกต้อง", "error");
       return;
     }
@@ -318,9 +569,9 @@ export default function MultiplayerPage() {
     try {
       isJoiningRoomRef.current = true;
       setIsJoiningRoom(true);
-      await addPlayerToRoom(code, userId, playerName);
-      enterGame(code);
-      showToast(`เข้าร่วมห้อง ${code} สำเร็จ`, "success");
+      await addPlayerToRoom(sanitized, userId, playerName);
+      enterGame(sanitized);
+      showToast(`เข้าร่วมห้อง ${sanitized} สำเร็จ`, "success");
     } catch (error: any) {
       console.error("Error joining room:", error);
       showToast(error?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ", "error");
@@ -328,7 +579,15 @@ export default function MultiplayerPage() {
       isJoiningRoomRef.current = false;
       setIsJoiningRoom(false);
     }
-  };
+  }, [enterGame, playerName, showToast, userId]);
+
+  const joinRoomFunc = useCallback(
+    (overrideCode?: string) => {
+      const codeSource = typeof overrideCode === "string" ? overrideCode : roomCodeInput;
+      void tryJoinRoom(codeSource);
+    },
+    [roomCodeInput, tryJoinRoom]
+  );
 
   const handleRoomCodeChange = (value: string) => {
     const sanitized = value.replace(/\D/g, "").slice(0, 6);
@@ -336,7 +595,7 @@ export default function MultiplayerPage() {
     if (sanitized.length === 6) {
       setTimeout(() => {
         if (roomCodeLatestRef.current === sanitized && !isJoiningRoomRef.current) {
-          joinRoomFunc(sanitized);
+          void tryJoinRoom(sanitized);
         }
       }, 300);
     }
@@ -437,6 +696,17 @@ export default function MultiplayerPage() {
   const goBackToModeSelect = () => {
     router.push("/");
   };
+
+  useEffect(() => {
+    if (!userId || !playerName) {
+      return;
+    }
+    const autoJoinRoom = localStorage.getItem("chat_bomb_auto_join_room");
+    if (autoJoinRoom) {
+      localStorage.removeItem("chat_bomb_auto_join_room");
+      void tryJoinRoom(autoJoinRoom);
+    }
+  }, [playerName, tryJoinRoom, userId]);
 
   // Auto-return countdown for non-owner when room is closed
   useEffect(() => {
@@ -583,7 +853,7 @@ export default function MultiplayerPage() {
           />
         );
 
-      case "game":
+      case "game": {
         if (!currentRoomId || !currentRoomData || !userId) {
           return (
             <div className="flex flex-col items-center justify-center h-screen gap-4">
@@ -592,6 +862,9 @@ export default function MultiplayerPage() {
             </div>
           );
         }
+        const isRelayGuestContext = !!relaySession && currentRoomId === relaySession.targetRoomId;
+        const canLaunchRelay =
+          !relaySession && currentRoomData.room.status === "PLAYING" && currentRoomData.players?.length;
         return (
           <GameScreenComponent
             roomId={currentRoomId}
@@ -620,8 +893,16 @@ export default function MultiplayerPage() {
             roundTimeLeft={roundTimeLeft}
             isSoloMode={false}
             realtimeConnected={realtimeConnected}
+            onOpenRelayModal={handleOpenRelayModal}
+            canRelay={!!canLaunchRelay}
+            isRelayGuest={isRelayGuestContext}
+            onReturnToOrigin={isRelayGuestContext ? handleRelayReturnHome : undefined}
+            relaySession={relaySession}
+            onOpenJoinRequests={handleOpenJoinRequests}
+            pendingJoinRequestsCount={currentRoomData.pendingRequestsCount || 0}
           />
         );
+      }
 
       default:
         return null;
@@ -662,6 +943,29 @@ export default function MultiplayerPage() {
         mode="multiplayer"
         isOpen={showRulesModal}
         onClose={() => setShowRulesModal(false)}
+      />
+
+      <RelayModal
+        isOpen={showRelayModal}
+        isLoading={isRelayLoading}
+        rooms={relayRooms}
+        onClose={() => setShowRelayModal(false)}
+        onRefresh={refreshRelayRooms}
+        onQuickJoin={handleRelayQuickJoin}
+        onSelectRoom={handleRelayRoomSelect}
+        isJoining={isRelayJoining}
+        joiningRoomId={joiningRelayRoomId}
+      />
+
+      <JoinRequestsModal
+        isOpen={showJoinRequestsModal}
+        isLoading={isJoinRequestsLoading}
+        requests={joinRequests}
+        processingId={processingJoinRequestId}
+        onRefresh={() => void refreshJoinRequests()}
+        onApprove={handleApproveJoinRequest}
+        onReject={handleRejectJoinRequest}
+        onClose={() => setShowJoinRequestsModal(false)}
       />
 
       {renderScreen()}

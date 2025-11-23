@@ -83,6 +83,10 @@ export default function HomePage() {
     router.push("/multiplayer");
   };
 
+  const handleSelectCommunity = () => {
+    router.push("/community");
+  };
+
   const handleResetProfile = () => {
     localStorage.clear();
     setPlayerName(null);
@@ -135,6 +139,7 @@ export default function HomePage() {
             soloStats={getSoloStats()}
             onSelectSolo={handleSelectSolo}
             onSelectMultiplayer={handleSelectMultiplayer}
+            onSelectCommunity={handleSelectCommunity}
             onResetProfile={handleResetProfile}
           />
         );

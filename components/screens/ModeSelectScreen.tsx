@@ -8,6 +8,7 @@ interface ModeSelectScreenProps {
   soloStats: SoloStats;
   onSelectSolo: () => void;
   onSelectMultiplayer: () => void;
+  onSelectCommunity: () => void;
   onResetProfile: () => void;
 }
 
@@ -16,6 +17,7 @@ const ModeSelectScreen: React.FC<ModeSelectScreenProps> = ({
   soloStats,
   onSelectSolo,
   onSelectMultiplayer,
+  onSelectCommunity,
   onResetProfile,
 }) => {
   return (
@@ -76,13 +78,22 @@ const ModeSelectScreen: React.FC<ModeSelectScreenProps> = ({
                   อยู่ให้รอดครบ 10 นาทีเพื่อชนะ
                 </li>
               </ul>
-              <button
-                onClick={onSelectMultiplayer}
-                className="mt-auto w-full py-4 rounded-2xl bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 text-white font-semibold text-lg shadow-2xl hover:shadow-red-500/40 transition-all"
-              >
-                <i className="fas fa-door-open mr-2"></i>
-                เข้าสู่โหมดเล่นกลุ่ม
-              </button>
+              <div className="mt-auto flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={onSelectMultiplayer}
+                  className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 text-white font-semibold text-lg shadow-2xl hover:shadow-red-500/40 transition-all"
+                >
+                  <i className="fas fa-door-open mr-2"></i>
+                  ตั้งหรือเข้าห้องด้วยรหัส
+                </button>
+                <button
+                  onClick={onSelectCommunity}
+                  className="flex-1 py-4 rounded-2xl border border-blue-400/40 text-blue-200 hover:border-blue-300/60 hover:text-white transition-all"
+                >
+                  <i className="fas fa-globe mr-2"></i>
+                  เล่นกับคนอื่น
+                </button>
+              </div>
             </div>
           </div>
 

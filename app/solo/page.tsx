@@ -608,6 +608,8 @@ export default function SoloPracticePage() {
           player_id: gameState.userId,
           player_name: gameState.playerName,
           is_eliminated: false,
+          is_guest: false,
+          origin_room_id: null,
           joined_at: nowIso,
         },
         {
@@ -616,6 +618,8 @@ export default function SoloPracticePage() {
           player_id: "solo-bot",
           player_name: preset.botName,
           is_eliminated: false,
+          is_guest: false,
+          origin_room_id: null,
           joined_at: nowIso,
         },
       ],

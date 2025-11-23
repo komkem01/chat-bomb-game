@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Database } from '@/types/database';
-import { RoomData } from '@/types/game';
+import { RoomData, RelayRoomSummary, RelaySession, PublicRoomSummary, RoomJoinRequest } from '@/types/game';
 
 // Supabase configuration (injected at build time for browser use)
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -228,6 +228,92 @@ export const resetGame = async (roomId: string, ownerId: string) => {
   return apiFetch<RoomData>(`/api/rooms/${roomId}/reset`, {
     method: 'POST',
     body: JSON.stringify({ ownerId }),
+  });
+};
+
+interface RelayJoinResponse {
+  session: RelaySession;
+  roomData: RoomData;
+}
+
+interface RelayReturnResponse {
+  originRoomId: string;
+  roomData: RoomData;
+}
+
+export const fetchRelayRooms = async (originRoomId: string, playerId: string) => {
+  const params = new URLSearchParams({ originRoomId, playerId });
+  const response = await apiFetch<{ rooms: RelayRoomSummary[] }>(`/api/relay/rooms?${params.toString()}`);
+  return response.rooms;
+};
+
+export const requestRelayMatch = async (playerId: string, playerName: string, originRoomId: string) => {
+  return apiFetch<RelayJoinResponse>('/api/relay/match', {
+    method: 'POST',
+    body: JSON.stringify({ playerId, playerName, originRoomId }),
+  });
+};
+
+export const joinRelayRoom = async (
+  playerId: string,
+  playerName: string,
+  originRoomId: string,
+  targetRoomId: string
+) => {
+  return apiFetch<RelayJoinResponse>('/api/relay/join', {
+    method: 'POST',
+    body: JSON.stringify({ playerId, playerName, originRoomId, targetRoomId }),
+  });
+};
+
+export const returnRelayRoom = async (sessionId: string, playerId: string) => {
+  return apiFetch<RelayReturnResponse>('/api/relay/return', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, playerId }),
+  });
+};
+
+export const fetchPublicRooms = async (playerId?: string) => {
+  const params = new URLSearchParams();
+  if (playerId) {
+    params.set('playerId', playerId);
+  }
+  const queryString = params.toString();
+  const response = await apiFetch<{ rooms: PublicRoomSummary[] }>(
+    `/api/rooms/public${queryString ? `?${queryString}` : ''}`
+  );
+  return response.rooms;
+};
+
+export const requestRoomJoin = async (roomId: string, playerId: string, playerName: string) => {
+  return apiFetch<RoomJoinRequest>('/api/rooms/join/request', {
+    method: 'POST',
+    body: JSON.stringify({ roomId, playerId, playerName }),
+  });
+};
+
+export const fetchMyJoinRequests = async (playerId: string) => {
+  const response = await apiFetch<{ requests: RoomJoinRequest[] }>(
+    `/api/rooms/join/status?playerId=${playerId}`
+  );
+  return response.requests;
+};
+
+export const fetchOwnerJoinRequests = async (roomId: string, ownerId: string) => {
+  const response = await apiFetch<{ requests: RoomJoinRequest[] }>(
+    `/api/rooms/${roomId}/join-requests?ownerId=${ownerId}`
+  );
+  return response.requests;
+};
+
+export const respondToJoinRequest = async (
+  requestId: number,
+  ownerId: string,
+  decision: 'APPROVE' | 'DENY'
+) => {
+  return apiFetch<RoomJoinRequest>(`/api/rooms/join/requests/${requestId}`, {
+    method: 'POST',
+    body: JSON.stringify({ ownerId, decision }),
   });
 };
 
